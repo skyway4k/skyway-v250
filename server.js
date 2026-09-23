@@ -755,13 +755,14 @@ async function pollOpenSkyFlights() {
 }
 
 // ============================================================================================
-// ADSB inbound board — when SWIM is off and/or OpenSky OAuth is blocked from the host, fill
-// the arrivals board from live adsb.lol traffic near the airport so /dispatch map (arrivals-
-// only) and tables are not empty. Heuristic: within radius, airborne, and either heading
-// toward the field or already close/low.
+// ADSB live board — when SWIM is off and OpenSky /flights TLS fails, fill arrivals + departures
+// from adsb.lol near the field. GA/bizjet only (Signature FBO board). FROM/TO unknown without
+// SWIM/OpenSky schedules — ETA is geometric (distance / closing speed), not a filed ETA.
 // ============================================================================================
-var ADSB_BOARD_RADIUS_NM = parseInt(process.env.ADSB_BOARD_RADIUS_NM || '60', 10);
-var SFO_LAT = 37.6213, SFO_LON = -122.3790; // KSFO approx; overridden if AIRPORT overrides later
+var ADSB_BOARD_RADIUS_NM = parseInt(process.env.ADSB_BOARD_RADIUS_NM || '50', 10);
+var SFO_LAT = 37.6213, SFO_LON = -122.3790;
+var AIRLINE_CS = new Set(('UAL AAL DAL SWA ASA JBU NKS FFT SKW EDV RPA ASH ENY QXE HAL CPA BAW AFR DLH UAE CSG CCA CES CSN CHH CES FDX UPS GTI ATN ABX GTI VRD SCX WOA UAL CKS MPO').split(/\s+/));
+var FRAC_CS = /^(EJA|EJM|LXJ|TWY|JTL|XOJ|OPT|JRE|GTT|DPJ|VJT|GAJ|HRT|TIV|LNJ|CVC)/;
 function nmDist(lat1, lon1, lat2, lon2) {
   var dLat = (lat2 - lat1) * 60;
   var mid = ((lat1 + lat2) / 2) * Math.PI / 180;
@@ -773,25 +774,49 @@ function bearingDeg(lat1, lon1, lat2, lon2) {
   var Δλ = (lon2 - lon1) * Math.PI / 180;
   var y = Math.sin(Δλ) * Math.cos(φ2);
   var x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
-  var θ = Math.atan2(y, x) * 180 / Math.PI;
-  return (θ + 360) % 360;
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 }
 function angleDiffDeg(a, b) {
   var d = Math.abs(a - b) % 360;
   return d > 180 ? 360 - d : d;
 }
+function isGaBizTraffic(flight, reg, typeCode) {
+  var cs = String(flight || '').trim().toUpperCase();
+  var r = String(reg || '').trim().toUpperCase();
+  var t = String(typeCode || '').trim().toUpperCase();
+  // Airliners / heavies are never Signature FBO board traffic even on N-reg.
+  if (/^(A318|A319|A320|A321|A19N|A20N|A21N|A332|A333|A339|A359|A35K|A388|B71|B72|B73|B74|B75|B76|B77|B78|B37M|B38M|B39M|CRJ|E17|E19|E75|E29|BCS|MD8|MD9|DH8)/.test(t)) return false;
+  if (cs && AIRLINE_CS.has(cs.substring(0, 3))) return false;
+  if (FRAC_CS.test(cs)) return true;
+  if (r.charAt(0) === 'N' && r.length > 1 && r.charAt(1) >= '0' && r.charAt(1) <= '9') {
+    if (/^[A-Z]{3}\d/.test(cs) && AIRLINE_CS.has(cs.substring(0, 3))) return false;
+    // N-reg with empty/own callsign — GA/biz default OK unless type is airliner (handled above)
+    return true;
+  }
+  if (/^(C25|C25A|C25B|C25C|C500|C510|C525|C550|C560|C56X|C680|C68A|C700|C750|CL30|CL35|CL60|GLF|GLEX|GA[45678]C|LJ|EA50|E50P|E55P|PC12|PC24|TBM|BE20|B350|BE9L|C172|C182|C206|C208|C210|P28|PA46|SR2|DA4|DA6|H25|FA5|FA7|FA8|F2TH|HDJT|SF50)/.test(t)) return true;
+  return false;
+}
+function estimateEtaMin(distNm, gs, track, brgToField) {
+  var speed = (typeof gs === 'number' && gs > 40) ? gs : 120;
+  var closing = speed;
+  if (typeof track === 'number') {
+    var ang = angleDiffDeg(track, brgToField);
+    closing = Math.max(35, speed * Math.cos(ang * Math.PI / 180));
+  }
+  return Math.max(1, Math.min(180, Math.round((distNm / closing) * 60)));
+}
 async function pollAdsbInboundBoard() {
   if (isIdle()) { log('[ADSB board] skipped (idle)', 'INFO'); return; }
   try {
-    var dist = Math.max(10, Math.min(120, ADSB_BOARD_RADIUS_NM));
+    var dist = Math.max(10, Math.min(80, ADSB_BOARD_RADIUS_NM));
     var data = await fetchAdsbLol(SFO_LAT, SFO_LON, dist);
     if (!data || !Array.isArray(data.states)) {
       log('[ADSB board] no data from adsb.lol (backoff or error)', 'WARN');
       return;
     }
     var list = Array.isArray(data.ac) ? data.ac : [];
-    var seen = 0, upserted = 0;
-    var keep = {};
+    var seen = 0, arrN = 0, depN = 0;
+    var keepArr = {}, keepDep = {};
     if (!list.length && Array.isArray(data.states)) {
       list = data.states.map(function (st) {
         return {
@@ -812,44 +837,86 @@ async function pollAdsbInboundBoard() {
       if (!onGnd && (alt == null || isNaN(alt))) continue;
       var distNm = (typeof ac.dst === 'number') ? ac.dst : nmDist(lat, lon, SFO_LAT, SFO_LON);
       if (distNm > dist + 5) continue;
-      var track = (typeof ac.track === 'number') ? ac.track : null;
-      var brg = bearingDeg(lat, lon, SFO_LAT, SFO_LON);
-      var toward = track == null ? (distNm < 35) : (angleDiffDeg(track, brg) <= 90);
-      var lowClose = distNm <= 40 && alt <= 15000;
-      var inbound = !onGnd && alt <= 22000 && (toward || lowClose);
-      if (!inbound) continue;
       var flight = (ac.flight || '').trim().toUpperCase();
       var reg = String(ac.r || ac.reg || '').trim().toUpperCase();
+      var typeCode = String(ac.t || ac.type || '').trim();
+      if (typeCode === 'adsb_icao' || typeCode === 'adsr_icao' || typeCode === 'mlat') typeCode = String(ac.t || '').trim();
+      // adsb.lol uses `t` for ICAO type; `type` is often the ADS-B emitter kind
+      typeCode = String(ac.t || '').trim();
+      if (!isGaBizTraffic(flight, reg, typeCode)) continue;
+      var track = (typeof ac.track === 'number') ? ac.track : (typeof ac.true_heading === 'number' ? ac.true_heading : null);
+      var brgIn = bearingDeg(lat, lon, SFO_LAT, SFO_LON); // toward field
+      var brgOut = (brgIn + 180) % 360; // away from field
+      var toward = track == null ? (distNm < 25) : (angleDiffDeg(track, brgIn) <= 70);
+      var away = track != null && angleDiffDeg(track, brgOut) <= 70;
+      var gs = (typeof ac.gs === 'number') ? ac.gs : null;
       var ident = reg || flight || String(ac.hex || '').toUpperCase();
-      if (!ident) continue;
+      if (!ident || ident.charAt(0) === '~') continue;
       var key = ident.replace(/[^A-Z0-9]/g, '');
+      if (!key) continue;
       var nowISO = new Date().toISOString();
-      upsertMovement('arrivals', key, {
-        ident: ident,
-        callsign: flight || ident,
-        type: String(ac.t || ac.type || '').trim(),
-        from: '',
-        arrived: false,
-        arriveISO: nowISO,
-        arrive: fmtTimeLA(nowISO),
-        source: 'adsb-inbound',
-        alt: Math.round(alt),
-        distNm: Math.round(distNm * 10) / 10
-      });
-      keep[key] = true;
-      upserted++;
+
+      // Inbound: airborne, toward field or close/low
+      var inbound = !onGnd && alt <= 18000 && (toward || (distNm <= 25 && alt <= 10000));
+      if (inbound) {
+        var etaMin = estimateEtaMin(distNm, gs, track, brgIn);
+        var etaISO = new Date(Date.now() + etaMin * 60000).toISOString();
+        upsertMovement('arrivals', key, {
+          ident: ident,
+          callsign: flight || ident,
+          type: typeCode,
+          from: '',
+          fromNote: 'ADS-B live',
+          arrived: false,
+          arriveISO: etaISO,
+          arrive: fmtTimeLA(etaISO),
+          etaMin: etaMin,
+          etaNote: 'est. from ADS-B',
+          source: 'adsb-inbound',
+          alt: Math.round(alt),
+          distNm: Math.round(distNm * 10) / 10,
+          gs: gs != null ? Math.round(gs) : null
+        });
+        keepArr[key] = true;
+        arrN++;
+        continue;
+      }
+
+      // Outbound: just left / climbing away within ~35nm
+      var outbound = !onGnd && away && distNm <= 35 && alt <= 16000 && alt >= 200;
+      if (outbound) {
+        upsertMovement('departures', key, {
+          ident: ident,
+          callsign: flight || ident,
+          type: typeCode,
+          to: '',
+          toNote: 'ADS-B live',
+          departed: true,
+          departISO: nowISO,
+          depart: fmtTimeLA(nowISO),
+          source: 'adsb-outbound',
+          alt: Math.round(alt),
+          distNm: Math.round(distNm * 10) / 10,
+          gs: gs != null ? Math.round(gs) : null
+        });
+        keepDep[key] = true;
+        depN++;
+      }
     }
-    // Drop stale adsb-inbound rows not seen this poll so the board tracks live traffic.
-    var dropped = 0;
+    var droppedA = 0, droppedD = 0;
     movements.arrivals.forEach(function (f, key) {
-      if (f && f.source === 'adsb-inbound' && !keep[key]) { movements.arrivals.delete(key); dropped++; }
+      if (f && f.source === 'adsb-inbound' && !keepArr[key]) { movements.arrivals.delete(key); droppedA++; }
     });
-    log('[ADSB board] seen=' + seen + ' inbound=' + upserted + ' dropped=' + dropped + ' radius=' + dist + 'nm states=' + (data.states ? data.states.length : 0), upserted ? 'OK' : 'WARN');
-    if (upserted || dropped) broadcast({ type: 'board' });
+    movements.departures.forEach(function (f, key) {
+      if (f && f.source === 'adsb-outbound' && !keepDep[key]) { movements.departures.delete(key); droppedD++; }
+    });
+    log('[ADSB board] seen=' + seen + ' arr=' + arrN + ' dep=' + depN + ' dropA=' + droppedA + ' dropD=' + droppedD + ' r=' + dist + 'nm', (arrN || depN) ? 'OK' : 'WARN');
+    if (arrN || depN || droppedA || droppedD) broadcast({ type: 'board' });
   } catch (e) {
     log('[ADSB board] ' + e.message, 'WARN');
   }
 }
+
 
 var groundCache = {}; // accumulated from arrivals marked arrived, same idea as v249
 function pruneAndAccumulateGround() {
@@ -911,6 +978,7 @@ function buildStatusPayload() {
       backoffSecondsRemaining: Math.max(0, Math.ceil((adsbLolBackoffUntil - Date.now()) / 1000))
     }),
     adsbPrimary: ADSB_PRIMARY,
+    boardMode: SWIM_ENABLED ? 'swim' : 'adsb-live',
     idle: { paused: isIdle(), secondsSinceLastClient: Math.round((Date.now() - lastClientSeenAt) / 1000) },
     connectedClients: wsClients.size,
     airport: AIRPORT_ICAO
@@ -927,6 +995,7 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/dispatch' || pathname === '/dispatch.html') { serveFile(res, path.join(PUBLIC_DIR, 'dispatch.html'), 'text/html; charset=utf-8'); return; }
   if (pathname === '/line-room' || pathname === '/line-room.html') { serveFile(res, path.join(PUBLIC_DIR, 'line-room.html'), 'text/html; charset=utf-8'); return; }
   if (pathname === '/arrivals' || pathname === '/arrivals.html') { serveFile(res, path.join(PUBLIC_DIR, 'arrivals.html'), 'text/html; charset=utf-8'); return; }
+  if (pathname === '/airloom' || pathname === '/airloom.html') { serveFile(res, path.join(PUBLIC_DIR, 'airloom.html'), 'text/html; charset=utf-8'); return; }
 
   if (pathname === '/adsb/states') { touchActivity(); await handleAdsbStates(parsed.query, res); return; }
   if (pathname.startsWith('/osky/')) { touchActivity(); await proxyOsky(req.url.replace('/osky', ''), res); return; }
@@ -992,7 +1061,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  sendJSON(res, 200, { name: 'Skyway v250', views: ['/dispatch', '/line-room', '/arrivals'] });
+  sendJSON(res, 200, { name: 'Skyway v250', views: ['/dispatch', '/line-room', '/arrivals', '/airloom'] });
 });
 
 function broadcast(d) {
@@ -1035,7 +1104,7 @@ async function main() {
     swimStats.reason = 'SWIM_ENABLED!=1 (OpenSky + adsb.lol only)';
     log('SWIM skipped — set SWIM_ENABLED=1 with SWIM_USER/SWIM_PASS/SWIM_QUEUE when SWIFT is restored', 'WARN');
   }
-  log('Views: /dispatch  /line-room  /arrivals', 'OK');
+  log('Views: /dispatch  /line-room  /arrivals  /airloom', 'OK');
   log('AeroDataBox: ' + (ADB_ENABLED ? ('ENABLED, budget ' + ADB_MONTHLY_UNIT_BUDGET + ' units/mo') : 'disabled (set ADB_ENABLED=1 to turn on)'), 'INFO');
   log('ADSB primary: ' + ADSB_PRIMARY + ' (set ADSB_PRIMARY=opensky to force OpenSky)', 'INFO');
   if (process.env.DEMO_SEED === '1') {

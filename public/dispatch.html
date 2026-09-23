@@ -377,8 +377,8 @@ img.emoji{height:1em;width:1em;margin:0 .05em 0 .1em;vertical-align:-0.1em;displ
 </div>
 <div class="resize-bar" id="resizeBar"><div class="resize-grip"></div></div>
 <div class="boards">
-<div class="board"><div class="bh"><div class="bt ar">🛬 En Route / Scheduled to SFO</div><span class="bc" id="anc">0</span></div><div class="cols ca"><span>Ident</span><span></span><span></span><span>Type</span><span>From</span><span>Depart</span><span>Arrive</span><span>ETA</span><span>Spot</span><span>PAX</span></div><div class="bb" id="ab"></div></div>
-<div class="board"><div class="bh"><div class="bt de">🛫 Scheduled Departures</div><span class="bc" id="dnc">0</span></div><div class="cols cd"><span>Ident</span><span></span><span></span><span>Type</span><span>To</span><span>Depart</span><span>ETD</span><span>Spot</span></div><div class="bb" id="db"></div></div>
+<div class="board"><div class="bh"><div class="bt ar" id="arrTitle">🛬 En Route / Scheduled to SFO</div><span class="bc" id="anc">0</span></div><div class="cols ca"><span>Ident</span><span></span><span></span><span>Type</span><span>From</span><span>Depart</span><span>Arrive</span><span>ETA</span><span>Spot</span><span>PAX</span></div><div class="bb" id="ab"></div></div>
+<div class="board"><div class="bh"><div class="bt de" id="depTitle">🛫 Scheduled Departures</div><span class="bc" id="dnc">0</span></div><div class="cols cd"><span>Ident</span><span></span><span></span><span>Type</span><span>To</span><span>Depart</span><span>ETD</span><span>Spot</span></div><div class="bb" id="db"></div></div>
 </div>
 <div class="boards done-boards">
 <div class="board"><div class="bh done-hdr" id="ah" style="display:none"><div class="bt ar" style="opacity:.5">✓ Arrived</div><span class="bc" id="adc">0</span></div><div class="cols ca-done" id="ahcols" style="display:none"><span>Ident</span><span></span><span></span><span>Type</span><span>From</span><span>Depart</span><span>Arrive</span><span>Time</span><span>Spot</span></div><div class="bb" id="adb" style="display:none"></div></div>
@@ -1873,6 +1873,8 @@ function mkRow(f,cls,done){
   var locSub='';
   if(f.intl&&f.country)locSub='<span class="sub">'+htmlEsc(f.country)+'</span>';
   else if(f.city)locSub='<span class="sub">'+htmlEsc(f.city)+'</span>';
+  else if(!loc&&(f.fromNote||f.toNote))locSub='<span class="sub">'+htmlEsc(f.fromNote||f.toNote)+'</span>';
+  if(!loc){loc='—';locSafe='—';}
   var ffcls=f.intl?'ff intl':'ff';
   // Type with model name sub
   var typeCode=safeStr(f.type);
@@ -1896,7 +1898,12 @@ function mkRow(f,cls,done){
   else if(cls==='ar'&&!done&&f._landed)etaStr='<span class="arr-eta" data-tail="'+htmlEsc((f.ident||'').toUpperCase())+'" data-callsign="'+htmlEsc((f.callsign||'').toUpperCase())+'" style="color:var(--green);font-weight:700">LANDED</span>';
   else if(cls==='ar'&&!done&&rawEta<=5&&rawEta>0)etaStr='<span class="arr-eta" data-tail="'+htmlEsc((f.ident||'').toUpperCase())+'" data-callsign="'+htmlEsc((f.callsign||'').toUpperCase())+'" style="color:var(--amber);font-weight:700">FINAL</span>';
   else if(cls==='ar'&&!done&&rawEta<=0)etaStr='<span class="arr-eta" data-tail="'+htmlEsc((f.ident||'').toUpperCase())+'" data-callsign="'+htmlEsc((f.callsign||'').toUpperCase())+'" style="color:var(--green);font-weight:700">LANDED</span>';
-  else if(rawEta>0)etaStr=fmtHM(rawEta);
+  else if(rawEta>0){
+    etaStr=fmtHM(rawEta);
+    if(f.etaNote||(f.source&&String(f.source).indexOf('adsb')===0)){
+      etaStr='<span title="'+htmlEsc(f.etaNote||'Estimated from live ADS-B position/speed')+'">~'+etaStr+'</span>';
+    }
+  }
   var rowCls='';
   if(cls==='ar'&&!done)rowCls=' arr-active';
   else if(cls==='de'&&!done&&!f.departed)rowCls=' dep-ground';
@@ -2096,6 +2103,21 @@ function calcProgClient(depISO,arrISO){
   return Math.round(((now-dep)/total)*100);
 }
 
+function updateBoardTitles(mode){
+  var at=document.getElementById('arrTitle');
+  var dt=document.getElementById('depTitle');
+  if(!at||!dt)return;
+  if(mode==='adsb-live'){
+    at.textContent='🛬 Live inbound near SFO (ADS-B)';
+    dt.textContent='🛫 Live outbound near SFO (ADS-B)';
+    at.title='GA/bizjet positions from adsb.lol — not filed schedules. FROM/TO need SWIM or OpenSky.';
+    dt.title='GA/bizjet climbing away from KSFO — not filed schedules.';
+  } else {
+    at.textContent='🛬 En Route / Scheduled to SFO';
+    dt.textContent='🛫 Scheduled Departures';
+    at.title='';dt.title='';
+  }
+}
 function fetchBoards(){
   console.log('[BOARDS] Fetching arrivals...');
   fetch('/api/arrivals').then(function(r){
@@ -2515,6 +2537,7 @@ function renderCreditHUD(){
 function updateCreditStatus(){
   fetch('/status',{cache:'no-cache'}).then(function(r){return r.json();}).then(function(s){
     window._creditStatus=s;
+    if(s.boardMode)updateBoardTitles(s.boardMode);
     // Anchor the backoff end to a real timestamp so the local ticker can count down every second.
     // When s.inBackoff flips false, clear the anchor so the HUD swaps back to remaining/budget display.
     if(s.inBackoff){
@@ -2785,7 +2808,7 @@ function connectRampWS(){
         } else if(msg.type==='board'){
           refresh();
         } else if(msg.type==='status'){
-          window._creditStatus=msg.data;renderCreditHUD();renderSwimHUD(msg.data.swim);renderAdbHUD(msg.data.adb);renderIdleHUD(msg.data.idle);
+          window._creditStatus=msg.data;if(msg.data.boardMode)updateBoardTitles(msg.data.boardMode);renderCreditHUD();renderSwimHUD(msg.data.swim);renderAdbHUD(msg.data.adb);renderIdleHUD(msg.data.idle);
         }
       }catch(e){}
     };
