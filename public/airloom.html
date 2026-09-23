@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#0a0e14" />
+<title>AIR LOOM — KSFO</title>
+<style>
+  :root {
+    --bg: #0a0e14;
+    --panel: rgba(12, 18, 28, 0.92);
+    --border: rgba(80, 140, 200, 0.25);
+    --text: #d6e4f0;
+    --muted: #7a8fa3;
+    --accent: #3ecf8e;
+    --cyan: #4ecdc4;
+    --warn: #f0b429;
+    --danger: #ff6b6b;
+    --font: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font); }
+  #c { display: block; width: 100%; height: 100%; touch-action: none; -webkit-tap-highlight-color: transparent; }
+  #hud {
+    position: absolute; top: 14px; left: 18px; z-index: 5; pointer-events: none;
+    text-shadow: 0 1px 8px rgba(0,0,0,0.85);
+  }
+  #hud h1 {
+    font-size: 15px; letter-spacing: 0.28em; font-weight: 600; color: #e8f4ff;
+  }
+  #hud .sub { margin-top: 4px; font-size: 12px; color: var(--muted); letter-spacing: 0.08em; font-family: var(--mono); }
+  #hud .note { margin-top: 2px; font-size: 11px; color: var(--warn); }
+  #stats {
+    position: absolute; top: 14px; right: 18px; z-index: 5; text-align: right;
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    text-shadow: 0 1px 8px rgba(0,0,0,0.85); pointer-events: none;
+  }
+  #stats .n { color: var(--cyan); font-size: 18px; font-weight: 600; }
+  #drawer {
+    position: absolute; top: 0; left: 0; bottom: 0; width: 292px; z-index: 10;
+    background: var(--panel); border-right: 1px solid var(--border);
+    backdrop-filter: blur(12px); transform: translateX(0);
+    transition: transform 0.25s ease; display: flex; flex-direction: column;
+    font-size: 12px;
+  }
+  #drawer.collapsed { transform: translateX(-100%); }
+  #drawer header {
+    padding: 16px 16px 12px; border-bottom: 1px solid var(--border);
+    letter-spacing: 0.2em; font-size: 11px; color: var(--cyan);
+  }
+  #drawer .body { padding: 12px 16px 24px; overflow-y: auto; flex: 1; }
+  .row { display: flex; justify-content: space-between; align-items: center; margin: 8px 0; gap: 8px; }
+  .row label { color: var(--muted); flex: 1; }
+  .row .val { font-family: var(--mono); color: var(--text); min-width: 42px; text-align: right; }
+  .section { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .section h3 { font-size: 10px; letter-spacing: 0.18em; color: var(--accent); margin-bottom: 8px; text-transform: uppercase; }
+  input[type="range"] { width: 100%; accent-color: var(--cyan); }
+  input[type="text"], input[type="search"] {
+    width: 100%; background: rgba(0,0,0,0.35); border: 1px solid var(--border);
+    color: var(--text); padding: 7px 9px; border-radius: 4px; font-family: var(--mono); font-size: 12px;
+  }
+  input[type="checkbox"] { accent-color: var(--cyan); }
+  button {
+    background: rgba(62, 207, 142, 0.12); border: 1px solid rgba(62, 207, 142, 0.4);
+    color: var(--accent); padding: 7px 10px; border-radius: 4px; cursor: pointer;
+    font-size: 11px; letter-spacing: 0.06em; width: 100%;
+  }
+  button:hover { background: rgba(62, 207, 142, 0.22); }
+  button.ghost { background: transparent; border-color: var(--border); color: var(--muted); }
+  #toggleDrawer {
+    position: absolute; top: 12px; left: 300px; z-index: 11;
+    width: auto; padding: 6px 10px; transition: left 0.25s ease;
+  }
+  #drawer.collapsed + #toggleDrawer { left: 12px; }
+  #sel {
+    position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 18px; min-width: 280px; max-width: 90vw; z-index: 8;
+    display: none; backdrop-filter: blur(10px); font-family: var(--mono); font-size: 12px;
+  }
+  #sel.visible { display: block; }
+  #sel .cs { font-size: 16px; color: #fff; letter-spacing: 0.12em; margin-bottom: 6px; }
+  #sel .grid { display: grid; grid-template-columns: auto 1fr; gap: 2px 14px; color: var(--muted); }
+  #sel .grid b { color: var(--text); font-weight: 500; }
+  #toast {
+    position: absolute; bottom: 18px; right: 18px; z-index: 9;
+    background: rgba(20,10,10,0.9); border: 1px solid rgba(255,107,107,0.4);
+    color: #ffb4b4; padding: 8px 12px; border-radius: 6px; font-size: 11px;
+    display: none; max-width: 320px;
+  }
+  a.credits {
+    position: absolute; bottom: 10px; left: 18px; z-index: 5;
+    font-size: 10px; color: var(--muted); text-decoration: none; opacity: 0.7;
+  }
+  a.credits:hover { opacity: 1; color: var(--cyan); }
+
+  #c { touch-action: none; -webkit-tap-highlight-color: transparent; }
+  #toast.visible { display: block; }
+  @media (max-width: 720px) {
+    #drawer { width: min(86vw, 320px); }
+    #drawer.collapsed { transform: translateX(-100%); }
+    #toggleDrawer { left: 12px; top: max(12px, env(safe-area-inset-top)); }
+    #drawer:not(.collapsed) + #toggleDrawer { left: calc(min(86vw, 320px) + 8px); }
+    #hud { top: max(14px, env(safe-area-inset-top)); left: 14px; }
+    #stats { top: max(14px, env(safe-area-inset-top)); right: 14px; }
+    #sel { bottom: max(18px, env(safe-area-inset-bottom)); }
+    a.credits { bottom: max(10px, env(safe-area-inset-bottom)); }
+  }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet" />
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud">
+  <h1>AIR LOOM — <span id="hudAirport">KSFO</span></h1>
+  <div class="sub" id="hudSub">San Francisco Intl · live ADS-B via Skyway</div>
+  <div class="note" id="hudNote" style="display:none"></div>
+</div>
+<div id="stats">
+  <div><span class="n" id="acCount">—</span> aircraft</div>
+  <div id="srcLine">source: —</div>
+  <div id="pollLine">poll: —</div>
+</div>
+
+<aside id="drawer">
+  <header>AIR LOOM CONTROLS</header>
+  <div class="body">
+    <div class="row"><label>Aircraft</label><span class="val" id="uiCount">0</span></div>
+    <div class="row"><label>Recording</label><span class="val" style="color:var(--muted)">inactive</span></div>
+    <div class="row"><label>Memory</label><span class="val" id="uiMem" style="color:var(--muted)">—</span></div>
+
+    <div class="section">
+      <h3>Data sources</h3>
+      <div class="row"><label>Flight Data</label><span class="val" id="uiSource" style="font-size:10px">—</span></div>
+      <div class="row"><label>Airport</label><span class="val">KSFO</span></div>
+    </div>
+
+    <div class="section">
+      <h3>View</h3>
+      <div class="row"><label>Radius (nm)</label><span class="val" id="vRadius">50</span></div>
+      <input type="range" id="sRadius" min="15" max="120" value="50" step="5" />
+      <div class="row"><label>Trail length</label><span class="val" id="vTrail">40</span></div>
+      <input type="range" id="sTrail" min="5" max="120" value="40" step="5" />
+      <div class="row"><label>Altitude scale</label><span class="val" id="vAltScale">1.2</span></div>
+      <input type="range" id="sAltScale" min="0.4" max="3" value="1.2" step="0.1" />
+      <div class="row">
+        <label for="sGround">Show on ground</label>
+        <input type="checkbox" id="sGround" />
+      </div>
+      <div class="row">
+        <label for="sAuto">Auto-rotate</label>
+        <input type="checkbox" id="sAuto" checked />
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Filter</h3>
+      <input type="search" id="sFilter" placeholder="callsign / hex…" autocomplete="off" />
+      <div style="height:8px"></div>
+      <button type="button" class="ghost" id="btnClear">Clear filters</button>
+    </div>
+
+    <div class="section">
+      <h3>Selected</h3>
+      <div id="uiSelNone" style="color:var(--muted)">Click an aircraft</div>
+      <div id="uiSelBody" style="display:none;font-family:var(--mono);line-height:1.55"></div>
+    </div>
+  </div>
+</aside>
+<button type="button" id="toggleDrawer" title="Toggle panel">☰</button>
+
+<div id="sel">
+  <div class="cs" id="selCs">—</div>
+  <div class="grid" id="selGrid"></div>
+</div>
+<div id="toast"></div>
+<a class="credits" href="https://objectiveunclear.com/airloom" target="_blank" rel="noopener">inspired by Air Loom</a>
+
+<script type="module">
+import * as THREE from '/vendor/three/three.module.js';
+import { OrbitControls } from '/vendor/three/addons/controls/OrbitControls.js';
+
+// ─── Airport / ENU ───────────────────────────────────────────────────────────
+const AIRPORTS = {
+  KSFO: { icao: 'KSFO', name: 'San Francisco Intl', lat: 37.62818, lon: -122.38487 },
+  SFO:  { icao: 'KSFO', name: 'San Francisco Intl', lat: 37.62818, lon: -122.38487 },
+};
+
+const params = new URLSearchParams(location.search);
+let aptCode = (params.get('airport') || 'KSFO').toUpperCase().replace(/^K/, (m, i, s) => s.length === 4 ? 'K' : m);
+// normalize SFO → KSFO, keep KSFO
+if (aptCode === 'SFO') aptCode = 'KSFO';
+if (aptCode.length === 3) aptCode = 'K' + aptCode;
+const known = AIRPORTS[aptCode] || AIRPORTS[(params.get('airport') || '').toUpperCase()];
+const ORIGIN = known || AIRPORTS.KSFO;
+const UNKNOWN_APT = !known && params.get('airport');
+
+document.getElementById('hudAirport').textContent = ORIGIN.icao;
+document.getElementById('hudSub').textContent = ORIGIN.name + ' · live ADS-B via Skyway';
+if (UNKNOWN_APT) {
+  const n = document.getElementById('hudNote');
+  n.style.display = 'block';
+  n.textContent = 'Unknown airport "' + params.get('airport') + '" — showing KSFO';
+}
+
+const R_EARTH = 6378137;
+const NM_M = 1852;
+const FT_M = 0.3048;
+const MAX_AIRCRAFT = 400;
+const POLL_MS = 6000;
+
+function enu(lat, lon, altM) {
+  const dLat = (lat - ORIGIN.lat) * Math.PI / 180;
+  const dLon = (lon - ORIGIN.lon) * Math.PI / 180;
+  const cos = Math.cos(ORIGIN.lat * Math.PI / 180);
+  const east = dLon * cos * R_EARTH;
+  const north = dLat * R_EARTH;
+  return { x: east, y: altM || 0, z: -north };
+}
+
+function haversineNm(lat1, lon1, lat2, lon2) {
+  const toR = Math.PI / 180;
+  const a = Math.sin((lat2 - lat1) * toR / 2) ** 2 +
+    Math.cos(lat1 * toR) * Math.cos(lat2 * toR) * Math.sin((lon2 - lon1) * toR / 2) ** 2;
+  return 2 * R_EARTH * Math.asin(Math.sqrt(a)) / NM_M;
+}
+
+function altColor(altM) {
+  // low→blue, mid→cyan/green, high→yellow/red  (0–12000m)
+  const t = Math.max(0, Math.min(1, (altM || 0) / 12000));
+  const c = new THREE.Color();
+  if (t < 0.33) c.setHSL(0.58, 0.85, 0.45 + t * 0.2);       // blue
+  else if (t < 0.66) c.setHSL(0.45 - (t - 0.33) * 0.3, 0.9, 0.5); // cyan→green
+  else c.setHSL(0.15 - (t - 0.66) * 0.35, 0.95, 0.52);           // yellow→red
+  return c;
+}
+
+// ─── Scene ───────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({
+    canvas,
+    antialias: !(/iPhone|iPad|iPod/i.test(navigator.userAgent)),
+    alpha: false,
+    powerPreference: 'high-performance',
+    failIfMajorPerformanceCaveat: false,
+  });
+} catch (err) {
+  const toast = document.getElementById('toast');
+  toast.textContent = 'WebGL failed on this device: ' + (err && err.message ? err.message : err);
+  toast.style.display = 'block';
+  throw err;
+}
+if (!renderer.getContext()) {
+  const toast = document.getElementById('toast');
+  toast.textContent = 'WebGL is unavailable in this Safari session.';
+  toast.style.display = 'block';
+  throw new Error('no WebGL');
+}
+const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+renderer.setPixelRatio(Math.min(devicePixelRatio, isIOS ? 1.5 : 2));
+renderer.setSize(innerWidth, innerHeight, false);
+renderer.setClearColor(0x05080d);
+if ('outputColorSpace' in renderer) renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x05080d, 0.000012);
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 50, 5e6);
+camera.position.set(18000, 14000, 22000);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.maxPolarAngle = Math.PI * 0.48;
+controls.minDistance = 800;
+controls.maxDistance = 280000;
+controls.target.set(0, 0, 0);
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.35;
+
+scene.add(new THREE.AmbientLight(0x6688aa, 0.55));
+const sun = new THREE.DirectionalLight(0xffe6c8, 0.85);
+sun.position.set(40000, 80000, 20000);
+scene.add(sun);
+const hemi = new THREE.HemisphereLight(0x87a0c0, 0x1a2030, 0.35);
+scene.add(hemi);
+
+// ─── Ground ──────────────────────────────────────────────────────────────────
+const groundGroup = new THREE.Group();
+scene.add(groundGroup);
+
+const GROUND_M = 220000; // ~60 nm each side
+let groundReady = false;
+
+function makeRunwaySketch() {
+  const g = new THREE.Group();
+  // KSFO rough runway orientations (approx true headings)
+  const runways = [
+    { hdg: 100, len: 3600, wid: 60, ox: 200, oz: -400 },   // 10L/28R-ish
+    { hdg: 100, len: 3600, wid: 60, ox: -200, oz: 200 },
+    { hdg: 10,  len: 2800, wid: 50, ox: -800, oz: 0 },
+  ];
+  const mat = new THREE.MeshBasicMaterial({ color: 0x2a3340, transparent: true, opacity: 0.85 });
+  const edge = new THREE.MeshBasicMaterial({ color: 0xc8d6e0, transparent: true, opacity: 0.5 });
+  for (const rw of runways) {
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(rw.len, rw.wid), mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.rotation.z = -rw.hdg * Math.PI / 180;
+    mesh.position.set(rw.ox, 2, rw.oz);
+    g.add(mesh);
+    const c = new THREE.Mesh(new THREE.PlaneGeometry(rw.len * 0.9, 2), edge);
+    c.rotation.x = -Math.PI / 2;
+    c.rotation.z = -rw.hdg * Math.PI / 180;
+    c.position.set(rw.ox, 3, rw.oz);
+    g.add(c);
+  }
+  // airport ring
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(2200, 2300, 64),
+    new THREE.MeshBasicMaterial({ color: 0x3ecf8e, transparent: true, opacity: 0.25, side: THREE.DoubleSide })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 1;
+  g.add(ring);
+  return g;
+}
+
+function makeGridFallback() {
+  const grid = new THREE.GridHelper(GROUND_M, 80, 0x1e3a4a, 0x122030);
+  grid.position.y = 0;
+  groundGroup.add(grid);
+  groundGroup.add(makeRunwaySketch());
+  // dark plane
+  const plane = new THREE.Mesh(
+    new THREE.PlaneGeometry(GROUND_M, GROUND_M),
+    new THREE.MeshStandardMaterial({ color: 0x0c1218, roughness: 0.95, metalness: 0.05 })
+  );
+  plane.rotation.x = -Math.PI / 2;
+  plane.position.y = -1;
+  groundGroup.add(plane);
+  groundReady = true;
+}
+
+function latLonToTile(lat, lon, z) {
+  const n = 2 ** z;
+  const x = Math.floor((lon + 180) / 360 * n);
+  const y = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n);
+  return { x, y, z };
+}
+
+function tileToLatLon(x, y, z) {
+  const n = Math.PI - 2 * Math.PI * y / 2 ** z;
+  const lat = 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+  const lon = x / 2 ** z * 360 - 180;
+  return { lat, lon };
+}
+
+async function loadSatGround() {
+  // Show grid immediately so planes appear even if sat tiles are blocked/slow
+  makeGridFallback();
+  const z = 11;
+  const center = latLonToTile(ORIGIN.lat, ORIGIN.lon, z);
+  const span = 2; // 5x5 tiles — enough for local airspace
+  const size = 256 * (span * 2 + 1);
+  const cvs = document.createElement('canvas');
+  cvs.width = size; cvs.height = size;
+  const ctx = cvs.getContext('2d');
+  ctx.fillStyle = '#0c1218';
+  ctx.fillRect(0, 0, size, size);
+
+  let loaded = 0;
+  const total = (span * 2 + 1) ** 2;
+  const urls = [];
+  for (let dy = -span; dy <= span; dy++) {
+    for (let dx = -span; dx <= span; dx++) {
+      const tx = center.x + dx;
+      const ty = center.y + dy;
+      // Esri World Imagery
+      const url = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${ty}/${tx}`;
+      urls.push({ url, px: (dx + span) * 256, py: (dy + span) * 256 });
+    }
+  }
+
+  const tilePromise = Promise.all(urls.map(({ url, px, py }) => new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    const done = () => resolve();
+    const t = setTimeout(done, 4000);
+    img.onload = () => { clearTimeout(t); ctx.drawImage(img, px, py); loaded++; resolve(); };
+    img.onerror = () => { clearTimeout(t); resolve(); };
+    img.src = url;
+  })));
+  await Promise.race([
+    tilePromise,
+    new Promise((r) => setTimeout(r, 5000)),
+  ]);
+
+  if (loaded < total * 0.3) {
+    return; // keep grid fallback
+  }
+  // Clear prior grid fallback before adding sat mesh
+  while (groundGroup.children.length) {
+    const ch = groundGroup.children[0];
+    groundGroup.remove(ch);
+    if (ch.geometry) ch.geometry.dispose?.();
+    if (ch.material) {
+      if (Array.isArray(ch.material)) ch.material.forEach((m) => m.dispose?.());
+      else ch.material.dispose?.();
+    }
+  }
+
+  // Geographic extent of the tile mosaic (NW corner of top-left tile → SE of bottom-right)
+  const nw = tileToLatLon(center.x - span, center.y - span, z);
+  const se = tileToLatLon(center.x + span + 1, center.y + span + 1, z);
+  const nwE = enu(nw.lat, nw.lon, 0);
+  const seE = enu(se.lat, se.lon, 0);
+  const width = Math.abs(seE.x - nwE.x);
+  const height = Math.abs(seE.z - nwE.z);
+  const cx = (nwE.x + seE.x) / 2;
+  const cz = (nwE.z + seE.z) / 2;
+
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  try { tex.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy() || 1); } catch (_) {}
+  const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.92, metalness: 0.0 });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), mat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(cx, 0, cz);
+  groundGroup.add(mesh);
+
+  // subtle grid overlay
+  const grid = new THREE.GridHelper(Math.max(width, height) * 0.9, 40, 0xffffff, 0xffffff);
+  grid.material.transparent = true;
+  grid.material.opacity = 0.04;
+  grid.position.y = 2;
+  groundGroup.add(grid);
+  groundGroup.add(makeRunwaySketch());
+  groundReady = true;
+}
+
+loadSatGround().catch(() => makeGridFallback());
+
+// ─── Aircraft resources ──────────────────────────────────────────────────────
+function makePlaneGeo() {
+  // Wedge / arrow pointing +Z (we'll rotate by track)
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 1.6);
+  shape.lineTo(0.7, -1.2);
+  shape.lineTo(0, -0.6);
+  shape.lineTo(-0.7, -1.2);
+  shape.closePath();
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.15, bevelEnabled: false });
+  geo.rotateX(-Math.PI / 2);
+  geo.rotateY(Math.PI); // nose +Z after? track uses Y rotation from north
+  // Prefer nose along +X then rotate: actually orient so local +Z is forward
+  geo.computeVertexNormals();
+  return geo;
+}
+const sharedPlaneGeo = makePlaneGeo();
+
+function makeGlowSprite() {
+  const s = 64;
+  const cvs = document.createElement('canvas');
+  cvs.width = s; cvs.height = s;
+  const g = cvs.getContext('2d');
+  const grd = g.createRadialGradient(s/2, s/2, 0, s/2, s/2, s/2);
+  grd.addColorStop(0, 'rgba(255,255,255,0.95)');
+  grd.addColorStop(0.35, 'rgba(180,230,255,0.35)');
+  grd.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, s, s);
+  const tex = new THREE.CanvasTexture(cvs);
+  return tex;
+}
+const glowTex = makeGlowSprite();
+
+const aircraft = new Map(); // icao24 → record
+let selectedId = null;
+let settings = {
+  radiusNm: 50,
+  trailLen: 40,
+  altScale: 1.2,
+  showGround: false,
+  filter: '',
+};
+
+// ─── UI wiring ───────────────────────────────────────────────────────────────
+const $ = (id) => document.getElementById(id);
+$('sRadius').oninput = (e) => { settings.radiusNm = +e.target.value; $('vRadius').textContent = settings.radiusNm; };
+$('sTrail').oninput = (e) => { settings.trailLen = +e.target.value; $('vTrail').textContent = settings.trailLen; };
+$('sAltScale').oninput = (e) => { settings.altScale = +e.target.value; $('vAltScale').textContent = settings.altScale.toFixed(1); };
+$('sGround').onchange = (e) => { settings.showGround = e.target.checked; };
+$('sAuto').onchange = (e) => { controls.autoRotate = e.target.checked; };
+$('sFilter').oninput = (e) => { settings.filter = e.target.value.trim().toUpperCase(); };
+$('btnClear').onclick = () => {
+  settings.filter = '';
+  $('sFilter').value = '';
+  selectedId = null;
+  updateSelPanel(null);
+};
+$('toggleDrawer').onclick = () => $('drawer').classList.toggle('collapsed');
+// Mobile: start with drawer closed so the globe is usable on Safari iPhone
+if (matchMedia('(max-width: 720px)').matches) {
+  $('drawer').classList.add('collapsed');
+}
+
+
+function showToast(msg, ms = 4000) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => { t.style.display = 'none'; }, ms);
+}
+
+function updateSelPanel(rec) {
+  const bar = $('sel');
+  const body = $('uiSelBody');
+  const none = $('uiSelNone');
+  if (!rec) {
+    bar.classList.remove('visible');
+    body.style.display = 'none';
+    none.style.display = 'block';
+    return;
+  }
+  const altFt = Math.round((rec.altM || 0) / FT_M);
+  const spdKt = rec.vel != null ? Math.round(rec.vel / 0.514444) : '—';
+  const track = rec.track != null ? Math.round(rec.track) + '°' : '—';
+  $('selCs').textContent = rec.callsign || rec.icao;
+  $('selGrid').innerHTML =
+    `<span>hex</span><b>${rec.icao}</b>` +
+    `<span>alt</span><b>${altFt.toLocaleString()} ft</b>` +
+    `<span>spd</span><b>${spdKt} kt</b>` +
+    `<span>track</span><b>${track}</b>` +
+    `<span>src</span><b>${rec.source || '—'}</b>` +
+    `<span>gnd</span><b>${rec.onGround ? 'yes' : 'no'}</b>`;
+  bar.classList.add('visible');
+  none.style.display = 'none';
+  body.style.display = 'block';
+  body.innerHTML = `<div>${rec.callsign || '—'}</div><div style="color:var(--muted)">${rec.icao}</div>` +
+    `<div>${altFt} ft · ${spdKt} kt · ${track}</div>`;
+}
+
+// ─── Aircraft lifecycle ──────────────────────────────────────────────────────
+function createAircraft(icao) {
+  const group = new THREE.Group();
+  group.userData.icao = icao;
+
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x4ecdc4, emissive: 0x4ecdc4, emissiveIntensity: 0.55,
+    roughness: 0.35, metalness: 0.2,
+  });
+  const mesh = new THREE.Mesh(sharedPlaneGeo, mat);
+  mesh.scale.set(90, 90, 90);
+  mesh.userData.icao = icao;
+  group.add(mesh);
+
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowTex, color: 0x4ecdc4, transparent: true, opacity: 0.85, depthBlending: THREE.AdditiveBlending, depthWrite: false,
+  }));
+  glow.scale.set(500, 500, 1);
+  group.add(glow);
+
+  // vertical stick
+  const stickGeo = new THREE.BufferGeometry();
+  stickGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+  const stick = new THREE.Line(stickGeo, new THREE.LineBasicMaterial({
+    color: 0x4ecdc4, transparent: true, opacity: 0.45,
+  }));
+  group.add(stick);
+
+  // trail
+  const trailGeo = new THREE.BufferGeometry();
+  const maxPts = 130;
+  const trailPos = new Float32Array(maxPts * 3);
+  const trailCol = new Float32Array(maxPts * 3);
+  trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPos, 3));
+  trailGeo.setAttribute('color', new THREE.BufferAttribute(trailCol, 3));
+  trailGeo.setDrawRange(0, 0);
+  const trail = new THREE.Line(
+    trailGeo,
+    new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.85, linewidth: 1 })
+  );
+  scene.add(trail);
+
+  // label
+  const label = makeLabel('');
+  label.visible = false;
+  group.add(label);
+
+  scene.add(group);
+
+  return {
+    icao, group, mesh, glow, stick, trail, trailGeo, trailPos, trailCol, label,
+    trailPts: [],
+    lat: 0, lon: 0, altM: 0, track: 0, vel: 0, vr: 0, onGround: false, callsign: '',
+    source: '',
+    target: new THREE.Vector3(),
+    display: new THREE.Vector3(),
+    lastPoll: 0,
+    alive: true,
+  };
+}
+
+function makeLabel(text) {
+  const cvs = document.createElement('canvas');
+  cvs.width = 256; cvs.height = 64;
+  const ctx = cvs.getContext('2d');
+  const tex = new THREE.CanvasTexture(cvs);
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  spr.scale.set(1200, 300, 1);
+  spr.position.y = 220;
+  spr.userData.cvs = cvs;
+  spr.userData.ctx = ctx;
+  spr.userData.tex = tex;
+  spr.userData.text = '';
+  setLabelText(spr, text);
+  return spr;
+}
+
+function setLabelText(spr, text) {
+  if (spr.userData.text === text) return;
+  spr.userData.text = text;
+  const { cvs, ctx, tex } = spr.userData;
+  ctx.clearRect(0, 0, cvs.width, cvs.height);
+  if (!text) { tex.needsUpdate = true; return; }
+  ctx.fillStyle = 'rgba(8,14,22,0.7)';
+  roundRect(ctx, 8, 12, cvs.width - 16, 40, 6);
+  ctx.fill();
+  ctx.font = '600 28px "IBM Plex Mono", monospace';
+  ctx.fillStyle = '#e8f4ff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, cvs.width / 2, 32);
+  tex.needsUpdate = true;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function disposeAircraft(rec) {
+  scene.remove(rec.group);
+  scene.remove(rec.trail);
+  rec.mesh.material.dispose();
+  rec.glow.material.dispose();
+  rec.stick.geometry.dispose();
+  rec.stick.material.dispose();
+  rec.trailGeo.dispose();
+  rec.trail.material.dispose();
+  if (rec.label.userData.tex) rec.label.userData.tex.dispose();
+  rec.label.material.dispose();
+}
+
+function updateTrail(rec) {
+  const pts = rec.trailPts;
+  const n = Math.min(pts.length, settings.trailLen);
+  const start = pts.length - n;
+  for (let i = 0; i < n; i++) {
+    const p = pts[start + i];
+    const o = i * 3;
+    rec.trailPos[o] = p.x;
+    rec.trailPos[o + 1] = p.y;
+    rec.trailPos[o + 2] = p.z;
+    const fade = i / Math.max(1, n - 1);
+    const c = altColor(p.altM);
+    rec.trailCol[o] = c.r * fade;
+    rec.trailCol[o + 1] = c.g * fade;
+    rec.trailCol[o + 2] = c.b * fade;
+  }
+  rec.trailGeo.attributes.position.needsUpdate = true;
+  rec.trailGeo.attributes.color.needsUpdate = true;
+  rec.trailGeo.setDrawRange(0, n);
+  rec.trailGeo.computeBoundingSphere();
+}
+
+function applyPose(rec, smooth) {
+  const altVis = (rec.altM || 0) * settings.altScale;
+  const p = enu(rec.lat, rec.lon, altVis);
+  rec.target.set(p.x, p.y, p.z);
+  if (!smooth || rec.display.lengthSq() === 0) rec.display.copy(rec.target);
+
+  const col = altColor(rec.altM || 0);
+  rec.mesh.material.color.copy(col);
+  rec.mesh.material.emissive.copy(col);
+  rec.glow.material.color.copy(col);
+  rec.stick.material.color.copy(col);
+
+  // stick local: from ground to plane — stick is child of group, so set endpoints in world via geometry on group
+  // Better: keep stick in world? We put stick in group; rewrite positions relative to group origin at plane.
+  const pos = rec.stick.geometry.attributes.position.array;
+  pos[0] = 0; pos[1] = -rec.display.y; pos[2] = 0;
+  pos[3] = 0; pos[4] = 0; pos[5] = 0;
+  rec.stick.geometry.attributes.position.needsUpdate = true;
+
+  if (rec.track != null) {
+    // true_track deg from north, clockwise; our forward is -Z (north) after ENU
+    const rad = THREE.MathUtils.degToRad(rec.track);
+    rec.mesh.rotation.y = -rad;
+  }
+
+  const showLabel = selectedId === rec.icao || (settings.filter && (rec.callsign || '').includes(settings.filter));
+  rec.label.visible = !!showLabel;
+  if (showLabel) setLabelText(rec.label, rec.callsign || rec.icao);
+}
+
+// ─── Polling ─────────────────────────────────────────────────────────────────
+let lastPollAt = 0;
+let lastSource = '—';
+let pollError = null;
+
+async function poll() {
+  const url = `/adsb/states?lat=${ORIGIN.lat}&lon=${ORIGIN.lon}&dist=${settings.radiusNm}`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    lastSource = data.source || 'unknown';
+    pollError = null;
+    ingest(data);
+    lastPollAt = performance.now();
+    $('srcLine').textContent = 'source: ' + lastSource;
+    $('uiSource').textContent = lastSource === 'adsb.lol' ? 'adsb.lol' : lastSource === 'opensky' ? 'OpenSky' : lastSource;
+    $('pollLine').textContent = 'poll: ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    pollError = e.message || String(e);
+    showToast('ADS-B poll failed: ' + pollError);
+    $('pollLine').textContent = 'poll error';
+  }
+}
+
+function ingest(data) {
+  const states = data.states || [];
+  const src = data.source || '';
+  const now = performance.now();
+  const seen = new Set();
+
+  // Parse OpenSky-shaped rows
+  const parsed = [];
+  for (const s of states) {
+    if (!s || s[5] == null || s[6] == null) continue;
+    const icao = (s[0] || '').toLowerCase();
+    const callsign = (s[1] || '').trim().toUpperCase();
+    const lon = s[5], lat = s[6];
+    const baro = s[7];
+    const onGround = !!s[8];
+    const vel = s[9];
+    const track = s[10];
+    const vr = s[11];
+    const geo = s[13];
+    const altM = (geo != null && geo > 0) ? geo : (baro != null ? baro : 0);
+    const dist = haversineNm(ORIGIN.lat, ORIGIN.lon, lat, lon);
+    parsed.push({ icao, callsign, lat, lon, altM, onGround, vel, track, vr, dist, source: src });
+  }
+
+  // Filter
+  let list = parsed.filter((p) => {
+    if (!settings.showGround && p.onGround) return false;
+    if (settings.filter) {
+      const f = settings.filter;
+      if (!(p.callsign.includes(f) || p.icao.toUpperCase().includes(f))) return false;
+    }
+    return true;
+  });
+
+  // Cap: prefer nearest / airborne
+  if (list.length > MAX_AIRCRAFT) {
+    list.sort((a, b) => {
+      const ag = a.onGround ? 1 : 0, bg = b.onGround ? 1 : 0;
+      if (ag !== bg) return ag - bg;
+      return a.dist - b.dist;
+    });
+    list = list.slice(0, MAX_AIRCRAFT);
+  }
+
+  for (const p of list) {
+    seen.add(p.icao);
+    let rec = aircraft.get(p.icao);
+    if (!rec) {
+      rec = createAircraft(p.icao);
+      aircraft.set(p.icao, rec);
+    }
+    const prevLat = rec.lat, prevLon = rec.lon;
+    Object.assign(rec, {
+      callsign: p.callsign, lat: p.lat, lon: p.lon, altM: p.altM,
+      onGround: p.onGround, vel: p.vel, track: p.track, vr: p.vr,
+      source: p.source, lastPoll: now, alive: true,
+    });
+    applyPose(rec, true);
+
+    // trail point on each poll (and when moved)
+    const tp = rec.display.clone();
+    tp.altM = rec.altM;
+    if (!rec.trailPts.length || prevLat !== p.lat || prevLon !== p.lon) {
+      rec.trailPts.push(tp);
+      if (rec.trailPts.length > 130) rec.trailPts.shift();
+      updateTrail(rec);
+    }
+  }
+
+  // Remove stale
+  for (const [id, rec] of aircraft) {
+    if (!seen.has(id)) {
+      disposeAircraft(rec);
+      aircraft.delete(id);
+      if (selectedId === id) { selectedId = null; updateSelPanel(null); }
+    }
+  }
+
+  $('acCount').textContent = String(aircraft.size);
+  $('uiCount').textContent = String(aircraft.size);
+  if (selectedId && aircraft.has(selectedId)) updateSelPanel(aircraft.get(selectedId));
+}
+
+// ─── Interpolation / render ──────────────────────────────────────────────────
+const clock = new THREE.Clock();
+const _raycaster = new THREE.Raycaster();
+const _ptr = new THREE.Vector2();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.1);
+  const t = performance.now();
+
+  // dead-reckon between polls using velocity / track
+  for (const rec of aircraft.values()) {
+    if (rec.vel != null && rec.vel > 1 && rec.track != null && !rec.onGround) {
+      const age = (t - rec.lastPoll) / 1000;
+      if (age > 0 && age < POLL_MS / 1000 * 2.5) {
+        const distM = rec.vel * age;
+        const rad = THREE.MathUtils.degToRad(rec.track);
+        const dNorth = distM * Math.cos(rad);
+        const dEast = distM * Math.sin(rad);
+        const dLat = (dNorth / R_EARTH) * 180 / Math.PI;
+        const dLon = (dEast / (R_EARTH * Math.cos(ORIGIN.lat * Math.PI / 180))) * 180 / Math.PI;
+        const dAlt = (rec.vr || 0) * age;
+        const lat = rec.lat + dLat;
+        const lon = rec.lon + dLon;
+        const altVis = Math.max(0, (rec.altM + dAlt)) * settings.altScale;
+        const p = enu(lat, lon, altVis);
+        rec.target.set(p.x, p.y, p.z);
+      }
+    }
+    rec.display.lerp(rec.target, 1 - Math.exp(-3.5 * dt));
+    rec.group.position.copy(rec.display);
+    // update stick length for current display height
+    const pos = rec.stick.geometry.attributes.position.array;
+    pos[1] = -rec.display.y;
+    rec.stick.geometry.attributes.position.needsUpdate = true;
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+canvas.addEventListener('pointerdown', (ev) => {
+  if (ev.button !== 0) return;
+  const rect = canvas.getBoundingClientRect();
+  _ptr.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+  _ptr.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+  _raycaster.setFromCamera(_ptr, camera);
+  const meshes = [];
+  for (const rec of aircraft.values()) meshes.push(rec.mesh);
+  const hits = _raycaster.intersectObjects(meshes, false);
+  if (hits.length) {
+    const id = hits[0].object.userData.icao;
+    selectedId = id;
+    const rec = aircraft.get(id);
+    updateSelPanel(rec);
+    // reveal label
+    for (const r of aircraft.values()) {
+      const show = r.icao === selectedId || (settings.filter && (r.callsign || '').includes(settings.filter));
+      r.label.visible = !!show;
+      if (show) setLabelText(r.label, r.callsign || r.icao);
+    }
+  }
+});
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// boot
+poll();
+setInterval(poll, POLL_MS);
+
+// Memory stub (optional)
+setInterval(() => {
+  if (performance.memory) {
+    const mb = (performance.memory.usedJSHeapSize / 1048576).toFixed(0);
+    const el = document.getElementById('uiMem');
+    if (el) el.textContent = mb + ' MB';
+  }
+}, 5000);
+</script>
+</body>
+</html>

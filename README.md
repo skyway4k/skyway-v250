@@ -52,6 +52,7 @@ live.
 - `/arrivals` — built fresh for mobile + a Honeywell CT47 (5.5" rugged Android, gloved touch):
   big tail-number hero per row, 60px+ row height, portrait/landscape reflow via CSS grid, tabs
   for Arrivals/Departures. Fully read-only — this page never sends anything but GET.
+- `/airloom` — AirLoom-style 3D live ADS-B viewer for KSFO (Three.js, `/adsb/states` feed).
 
 ## Known limitation, please read before you rely on this
 
@@ -90,7 +91,7 @@ want a specific bbox tightened and I'll size it against the real formula.
 3. `npm run check` — syntax-checks server.js
 4. `node server.js` — it will refuse to start and tell you exactly what's missing if anything
    above wasn't set.
-5. Open `/dispatch`, `/line-room`, `/arrivals`.
+5. Open `/dispatch`, `/line-room`, `/arrivals`, `/airloom`.
 
 AeroDataBox stays off (`ADB_ENABLED=0` in `.env.example`) until you decide SWIM+OpenSky are
 leaving real gaps. When you do: get a RapidAPI key, set `ADB_ENABLED=1` and `ADB_KEY`, and set

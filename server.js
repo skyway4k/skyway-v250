@@ -996,6 +996,18 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/line-room' || pathname === '/line-room.html') { serveFile(res, path.join(PUBLIC_DIR, 'line-room.html'), 'text/html; charset=utf-8'); return; }
   if (pathname === '/arrivals' || pathname === '/arrivals.html') { serveFile(res, path.join(PUBLIC_DIR, 'arrivals.html'), 'text/html; charset=utf-8'); return; }
   if (pathname === '/airloom' || pathname === '/airloom.html') { serveFile(res, path.join(PUBLIC_DIR, 'airloom.html'), 'text/html; charset=utf-8'); return; }
+  if (pathname.startsWith('/vendor/')) {
+    var rel = pathname.slice('/vendor/'.length);
+    if (!rel || rel.includes('..') || path.isAbsolute(rel)) { res.writeHead(400); res.end('bad path'); return; }
+    var vPath = path.join(PUBLIC_DIR, 'vendor', rel);
+    if (!vPath.startsWith(path.join(PUBLIC_DIR, 'vendor'))) { res.writeHead(400); res.end('bad path'); return; }
+    var ext = path.extname(vPath).toLowerCase();
+    var ctype = ext === '.js' ? 'text/javascript; charset=utf-8'
+      : ext === '.mjs' ? 'text/javascript; charset=utf-8'
+      : ext === '.css' ? 'text/css; charset=utf-8'
+      : ext === '.map' ? 'application/json' : 'application/octet-stream';
+    serveFile(res, vPath, ctype); return;
+  }
 
   if (pathname === '/adsb/states') { touchActivity(); await handleAdsbStates(parsed.query, res); return; }
   if (pathname.startsWith('/osky/')) { touchActivity(); await proxyOsky(req.url.replace('/osky', ''), res); return; }
