@@ -1030,12 +1030,12 @@ window.onload=function(){
   setTimeout(function(){buildFaMapSet();refresh();},2500);
   // Adaptive poll cadence: 10s when healthy, 30s when rate-limited.
   // Reschedules itself each tick so we can change the delay on the fly without clearing interval.
-  window._refreshDelay=10000;
+  window._refreshDelay=15000;
   function scheduleRefresh(){
     setTimeout(function(){
       try{refresh();}catch(e){}
       // Check current state set by refresh() and adapt delay
-      window._refreshDelay=window._osky429?30000:10000;
+      window._refreshDelay=window._osky429?45000:15000;
       scheduleRefresh();
     },window._refreshDelay);
   }
@@ -1374,10 +1374,10 @@ function initMap(){
   //   4. The periodic health check now confirms "no tiles" across 2 consecutive 5s checks
   //      before nudging redraw, so it doesn't race during normal pan/zoom transitions.
   var tileProviders=[
-    {name:'CARTO-Dark',url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',sub:'abcd',theme:'dark'},
+    {name:'OSM',url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',sub:null,theme:'light'},
     {name:'ESRI-DarkGray',url:'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',sub:null,theme:'dark'},
     {name:'CARTO-Voyager',url:'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',sub:'abcd',theme:'light'},
-    {name:'OSM',url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',sub:null,theme:'light'}
+    {name:'CARTO-Dark',url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',sub:'abcd',theme:'dark'}
   ];
   // Dark gray tile substitute — when a single tile fails, this fills the cell with a dark
   // gray solid that matches the dark theme background, instead of a transparent void.

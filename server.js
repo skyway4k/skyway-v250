@@ -168,15 +168,24 @@ let oskyToken = null, oskyExp = 0, oskyAuthMode = 'unknown';
 async function getToken() {
   if (oskyToken && Date.now() < oskyExp - 30000) return oskyToken;
   try {
-    const r = await fetch(TOKEN_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `grant_type=client_credentials&client_id=${encodeURIComponent(OSKY_ID)}&client_secret=${encodeURIComponent(OSKY_SECRET)}` });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const r = await fetch(TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+      body: 'grant_type=client_credentials&client_id=' + encodeURIComponent(OSKY_ID) + '&client_secret=' + encodeURIComponent(OSKY_SECRET)
+    });
+    if (!r.ok) {
+      var errTxt = '';
+      try { errTxt = (await r.text()).slice(0, 120); } catch (e2) {}
+      throw new Error('HTTP ' + r.status + (errTxt ? (': ' + errTxt) : ''));
+    }
     const d = await r.json();
+    if (!d.access_token) throw new Error('token response missing access_token');
     oskyToken = d.access_token; oskyExp = Date.now() + (d.expires_in || 1800) * 1000;
     log('OpenSky token OK (authenticated tier: 4000 credits/day)', 'OK');
     oskyAuthMode = 'authenticated';
     return oskyToken;
   } catch (e) {
-    log('[OSKY AUTH] Token fetch failed: ' + e.message + ' — falling back to ANONYMOUS tier (400 credits/day)', 'ERR');
+    log('[OSKY AUTH] Token fetch failed: ' + e.message + ' — ANONYMOUS (400/day). Arrivals board uses adsb.lol inbound.', 'ERR');
     oskyAuthMode = 'anonymous';
     OSKY_DAILY_BUDGET = 400;
     return null;
@@ -377,42 +386,108 @@ function centerDistToBbox(lat, lon, distNm) {
     lomax: (lon + dLon).toFixed(4)
   };
 }
+// Shared cache + single-flight so map tabs + board poll do not stampede adsb.lol into 429.
+var adsbLolCache = { key: '', at: 0, data: null, inflight: null };
+var adsbLolBackoffUntil = 0;
+var ADSB_CACHE_FRESH_MS = 20000;
+var ADSB_CACHE_STALE_MS = 10 * 60 * 1000;
+function adsbCacheKey(lat, lon, dist) {
+  return Number(lat).toFixed(2) + ',' + Number(lon).toFixed(2) + ',' + dist;
+}
+function buildAdsbPayload(list) {
+  var states = [];
+  var acMeta = [];
+  for (var i = 0; i < list.length; i++) {
+    var ac = list[i];
+    if (!ac || ac.lat == null || ac.lon == null || !ac.hex) continue;
+    states.push(adsbAcToState(ac));
+    acMeta.push({
+      hex: String(ac.hex || '').toLowerCase(),
+      reg: ac.r || null,
+      type: ac.t || null,
+      flight: (ac.flight || '').trim() || null,
+      lat: typeof ac.lat === 'number' ? ac.lat : null,
+      lon: typeof ac.lon === 'number' ? ac.lon : null,
+      alt_baro: ac.alt_baro,
+      gs: ac.gs,
+      track: ac.track,
+      dst: ac.dst,
+      dir: ac.dir,
+      r: ac.r || null,
+      t: ac.t || null,
+      source: 'adsb.lol'
+    });
+  }
+  return { states: states, ac: acMeta, source: 'adsb.lol' };
+}
 async function fetchAdsbLol(lat, lon, distNm) {
   var dist = Math.max(1, Math.min(250, Math.round(Number(distNm) || 50)));
-  var url = 'https://api.adsb.lol/v2/lat/' + encodeURIComponent(lat) + '/lon/' + encodeURIComponent(lon) + '/dist/' + dist;
-  var ctrl = new AbortController();
-  var timer = setTimeout(function () { ctrl.abort(); }, 8000);
-  try {
-    var r = await fetch(url, { signal: ctrl.signal, headers: { 'Accept': 'application/json', 'User-Agent': 'Skyway/250 (airport ops map; contact local admin)' } });
-    clearTimeout(timer);
-    if (!r.ok) {
-      adsbLolStatus.ok = false;
-      adsbLolStatus.lastError = 'HTTP ' + r.status;
-      adsbLolStatus.lastFetchAt = Date.now();
+  var key = adsbCacheKey(lat, lon, dist);
+  var now = Date.now();
+  if (adsbLolCache.data && adsbLolCache.key === key && (now - adsbLolCache.at) < ADSB_CACHE_FRESH_MS) {
+    return adsbLolCache.data;
+  }
+  if (now < adsbLolBackoffUntil && adsbLolCache.data && (now - adsbLolCache.at) < ADSB_CACHE_STALE_MS) {
+    return adsbLolCache.data;
+  }
+  if (adsbLolCache.inflight && adsbLolCache.key === key) {
+    try { return await adsbLolCache.inflight; } catch (e) { /* fall through */ }
+  }
+  var run = (async function () {
+    if (Date.now() < adsbLolBackoffUntil) {
+      if (adsbLolCache.data && (Date.now() - adsbLolCache.at) < ADSB_CACHE_STALE_MS) return adsbLolCache.data;
       return null;
     }
-    var data = await r.json();
-    var list = Array.isArray(data.ac) ? data.ac : [];
-    var states = [];
-    var acMeta = [];
-    for (var i = 0; i < list.length; i++) {
-      var ac = list[i];
-      if (!ac || ac.lat == null || ac.lon == null || !ac.hex) continue;
-      states.push(adsbAcToState(ac));
-      acMeta.push({ hex: String(ac.hex).toLowerCase(), reg: ac.r || null, type: ac.t || null, source: 'adsb.lol' });
+    var url = 'https://api.adsb.lol/v2/lat/' + encodeURIComponent(lat) + '/lon/' + encodeURIComponent(lon) + '/dist/' + dist;
+    var ctrl = new AbortController();
+    var timer = setTimeout(function () { ctrl.abort(); }, 12000);
+    try {
+      var r = await fetch(url, {
+        signal: ctrl.signal,
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (compatible; SkywayAirportBoard/250; +https://github.com/skyway4k/skyway-v250)'
+        }
+      });
+      clearTimeout(timer);
+      if (!r.ok) {
+        adsbLolStatus.ok = false;
+        adsbLolStatus.lastError = 'HTTP ' + r.status;
+        adsbLolStatus.lastFetchAt = Date.now();
+        if (r.status === 429 || r.status === 503) {
+          adsbLolBackoffUntil = Date.now() + 60000;
+          log('[ADSB.LOL] HTTP ' + r.status + ' — backing off 60s, serving stale if any', 'WARN');
+        } else {
+          log('[ADSB.LOL] HTTP ' + r.status, 'WARN');
+        }
+        if (adsbLolCache.data && (Date.now() - adsbLolCache.at) < ADSB_CACHE_STALE_MS) return adsbLolCache.data;
+        return null;
+      }
+      var data = await r.json();
+      var list = Array.isArray(data.ac) ? data.ac : [];
+      var payload = buildAdsbPayload(list);
+      adsbLolStatus.ok = payload.states.length > 0;
+      adsbLolStatus.lastCount = payload.states.length;
+      adsbLolStatus.lastError = payload.states.length ? '' : 'empty';
+      adsbLolStatus.lastFetchAt = Date.now();
+      adsbLolCache = { key: key, at: Date.now(), data: payload, inflight: null };
+      return payload;
+    } catch (e) {
+      clearTimeout(timer);
+      adsbLolStatus.ok = false;
+      adsbLolStatus.lastError = e.name === 'AbortError' ? 'timeout' : (e.message || String(e));
+      adsbLolStatus.lastFetchAt = Date.now();
+      log('[ADSB.LOL] ' + adsbLolStatus.lastError, 'WARN');
+      if (adsbLolCache.data && (Date.now() - adsbLolCache.at) < ADSB_CACHE_STALE_MS) return adsbLolCache.data;
+      return null;
     }
-    adsbLolStatus.ok = states.length > 0;
-    adsbLolStatus.lastCount = states.length;
-    adsbLolStatus.lastError = states.length ? '' : 'empty';
-    adsbLolStatus.lastFetchAt = Date.now();
-    return { states: states, ac: acMeta, source: 'adsb.lol' };
-  } catch (e) {
-    clearTimeout(timer);
-    adsbLolStatus.ok = false;
-    adsbLolStatus.lastError = e.name === 'AbortError' ? 'timeout' : (e.message || String(e));
-    adsbLolStatus.lastFetchAt = Date.now();
-    log('[ADSB.LOL] ' + adsbLolStatus.lastError, 'WARN');
-    return null;
+  })();
+  adsbLolCache.key = key;
+  adsbLolCache.inflight = run;
+  try {
+    return await run;
+  } finally {
+    if (adsbLolCache.inflight === run) adsbLolCache.inflight = null;
   }
 }
 /** Internal OpenSky /states/all fetch — same credit/cache/backoff rules as proxyOsky, returns parsed JSON or null. */
@@ -679,6 +754,96 @@ async function pollOpenSkyFlights() {
   broadcast({ type: 'board' });
 }
 
+// ============================================================================================
+// ADSB inbound board — when SWIM is off and/or OpenSky OAuth is blocked from the host, fill
+// the arrivals board from live adsb.lol traffic near the airport so /dispatch map (arrivals-
+// only) and tables are not empty. Heuristic: within radius, airborne, and either heading
+// toward the field or already close/low.
+// ============================================================================================
+var ADSB_BOARD_RADIUS_NM = parseInt(process.env.ADSB_BOARD_RADIUS_NM || '60', 10);
+var SFO_LAT = 37.6213, SFO_LON = -122.3790; // KSFO approx; overridden if AIRPORT overrides later
+function nmDist(lat1, lon1, lat2, lon2) {
+  var dLat = (lat2 - lat1) * 60;
+  var mid = ((lat1 + lat2) / 2) * Math.PI / 180;
+  var dLon = (lon2 - lon1) * 60 * Math.cos(mid);
+  return Math.sqrt(dLat * dLat + dLon * dLon);
+}
+function bearingDeg(lat1, lon1, lat2, lon2) {
+  var φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+  var Δλ = (lon2 - lon1) * Math.PI / 180;
+  var y = Math.sin(Δλ) * Math.cos(φ2);
+  var x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  var θ = Math.atan2(y, x) * 180 / Math.PI;
+  return (θ + 360) % 360;
+}
+function angleDiffDeg(a, b) {
+  var d = Math.abs(a - b) % 360;
+  return d > 180 ? 360 - d : d;
+}
+async function pollAdsbInboundBoard() {
+  if (isIdle()) { log('[ADSB board] skipped (idle)', 'INFO'); return; }
+  try {
+    var dist = Math.max(10, Math.min(120, ADSB_BOARD_RADIUS_NM));
+    var data = await fetchAdsbLol(SFO_LAT, SFO_LON, dist);
+    if (!data || !Array.isArray(data.states)) {
+      log('[ADSB board] no data from adsb.lol (backoff or error)', 'WARN');
+      return;
+    }
+    var list = Array.isArray(data.ac) ? data.ac : [];
+    var seen = 0, upserted = 0;
+    if (!list.length && Array.isArray(data.states)) {
+      list = data.states.map(function (st) {
+        return {
+          hex: st[0], flight: (st[1] || '').trim(), lat: st[6], lon: st[5],
+          alt_baro: st[8] ? 'ground' : (st[7] != null ? st[7] / 0.3048 : null),
+          gs: st[9] != null ? st[9] / 0.514444 : null,
+          track: st[10], r: null, t: null
+        };
+      });
+    }
+    for (var i = 0; i < list.length; i++) {
+      var ac = list[i];
+      seen++;
+      var lat = ac.lat, lon = ac.lon;
+      if (lat == null || lon == null) continue;
+      var onGnd = ac.alt_baro === 'ground' || ac.alt_baro === 'GROUND';
+      var alt = onGnd ? 0 : (typeof ac.alt_baro === 'number' ? ac.alt_baro : parseFloat(ac.alt_baro));
+      if (!onGnd && (alt == null || isNaN(alt))) continue;
+      var distNm = (typeof ac.dst === 'number') ? ac.dst : nmDist(lat, lon, SFO_LAT, SFO_LON);
+      if (distNm > dist + 5) continue;
+      var track = (typeof ac.track === 'number') ? ac.track : null;
+      var brg = bearingDeg(lat, lon, SFO_LAT, SFO_LON);
+      var toward = track == null ? (distNm < 35) : (angleDiffDeg(track, brg) <= 90);
+      var lowClose = distNm <= 40 && alt <= 15000;
+      var inbound = !onGnd && alt <= 22000 && (toward || lowClose);
+      if (!inbound) continue;
+      var flight = (ac.flight || '').trim().toUpperCase();
+      var reg = String(ac.r || ac.reg || '').trim().toUpperCase();
+      var ident = reg || flight || String(ac.hex || '').toUpperCase();
+      if (!ident) continue;
+      var key = ident.replace(/[^A-Z0-9]/g, '');
+      var nowISO = new Date().toISOString();
+      upsertMovement('arrivals', key, {
+        ident: ident,
+        callsign: flight || ident,
+        type: String(ac.t || ac.type || '').trim(),
+        from: '',
+        arrived: false,
+        arriveISO: nowISO,
+        arrive: fmtTimeLA(nowISO),
+        source: 'adsb-inbound',
+        alt: Math.round(alt),
+        distNm: Math.round(distNm * 10) / 10
+      });
+      upserted++;
+    }
+    log('[ADSB board] seen=' + seen + ' inbound=' + upserted + ' radius=' + dist + 'nm states=' + (data.states ? data.states.length : 0), upserted ? 'OK' : 'WARN');
+    if (upserted) broadcast({ type: 'board' });
+  } catch (e) {
+    log('[ADSB board] ' + e.message, 'WARN');
+  }
+}
+
 var groundCache = {}; // accumulated from arrivals marked arrived, same idea as v249
 function pruneAndAccumulateGround() {
   movements.arrivals.forEach(function (f, key) {
@@ -735,7 +900,9 @@ function buildStatusPayload() {
   return Object.assign(getCreditSummary(), {
     swim: swimStats,
     adb: adbStatus(),
-    adsbLol: adsbLolStatusPayload(),
+    adsbLol: Object.assign(adsbLolStatusPayload(), {
+      backoffSecondsRemaining: Math.max(0, Math.ceil((adsbLolBackoffUntil - Date.now()) / 1000))
+    }),
     adsbPrimary: ADSB_PRIMARY,
     idle: { paused: isIdle(), secondsSinceLastClient: Math.round((Date.now() - lastClientSeenAt) / 1000) },
     connectedClients: wsClients.size,
@@ -843,6 +1010,7 @@ wss.on('connection', ws => {
 // it connected costs nothing and keeps the board correct the instant someone opens a tab again.
 // ------------------------------------------------------------------------------------------
 setInterval(pollOpenSkyFlights, 120000);
+setInterval(pollAdsbInboundBoard, 45000);
 setInterval(() => broadcast({ type: 'status', data: buildStatusPayload() }), 15000);
 setInterval(pruneAndAccumulateGround, 60000);
 
@@ -850,8 +1018,10 @@ async function main() {
   await initSchema();
   await adbLoadUsage();
   server.listen(PORT, '0.0.0.0', () => log('Skyway v250 — http://0.0.0.0:' + PORT, 'OK'));
-  await getToken();
+  // Don't let OpenSky auth block the adsb board — race token, await inbound fill.
+  getToken().catch(function () {});
   pollOpenSkyFlights();
+  try { await pollAdsbInboundBoard(); } catch (e) { log('[ADSB board] boot ' + e.message, 'WARN'); }
   if (SWIM_ENABLED) {
     connectSWIM();
   } else {
