@@ -33,12 +33,16 @@ services:
         sync: false
       - key: OSKY_SECRET
         sync: false
+      - key: SWIM_ENABLED
+        value: "0"
       - key: SWIM_USER
         sync: false
       - key: SWIM_PASS
         sync: false
       - key: SWIM_QUEUE
         sync: false
+      - key: ADSB_PRIMARY
+        value: adsb.lol
       - key: ADB_ENABLED
         value: "0"
       - key: ADB_KEY

@@ -36,12 +36,17 @@ function log(m, l = 'INFO') {
 // on YOUR account with no one noticing. If a required var is missing, we print exactly which
 // one(s) and exit(1) instead of limping along on a default.
 // ------------------------------------------------------------------------------------------
-const REQUIRED_ENV = ['OSKY_ID', 'OSKY_SECRET', 'SWIM_USER', 'SWIM_PASS', 'SWIM_QUEUE', 'DATABASE_URL'];
+// SWIM is optional until the FAA SWIFT account is restored. Set SWIM_ENABLED=1 plus
+// SWIM_USER/SWIM_PASS/SWIM_QUEUE to turn the Solace feed on. Boards still run on OpenSky
+// /flights/*; the map uses adsb.lol (with OpenSky fallback).
+const SWIM_ENABLED = process.env.SWIM_ENABLED === '1';
+const REQUIRED_ENV = ['OSKY_ID', 'OSKY_SECRET', 'DATABASE_URL'];
+if (SWIM_ENABLED) REQUIRED_ENV.push('SWIM_USER', 'SWIM_PASS', 'SWIM_QUEUE');
 const missing = REQUIRED_ENV.filter(k => !process.env[k] || !String(process.env[k]).trim());
 if (missing.length) {
   log('REFUSING TO BOOT — missing required environment variable(s): ' + missing.join(', '), 'ERR');
   log('Set these in your host\'s dashboard (or a local .env) and restart. See .env.example.', 'ERR');
-  log('OpenSky (OSKY_ID/OSKY_SECRET) and SWIM (SWIM_USER/SWIM_PASS/SWIM_QUEUE) are free — no bundled fallback is provided on purpose.', 'ERR');
+  log('OpenSky (OSKY_ID/OSKY_SECRET) is required. SWIM is optional — set SWIM_ENABLED=1 to require SWIM_USER/SWIM_PASS/SWIM_QUEUE.', 'ERR');
   process.exit(1);
 }
 // ADB (AeroDataBox) is optional and off by default — see "ONLY if SWIM has real gaps" below.
@@ -55,9 +60,9 @@ const OSKY_ID = process.env.OSKY_ID;
 const OSKY_SECRET = process.env.OSKY_SECRET;
 const TOKEN_URL = 'https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token';
 
-const SWIM_USER = process.env.SWIM_USER;
-const SWIM_PASS = process.env.SWIM_PASS;
-const SWIM_QUEUE = process.env.SWIM_QUEUE;
+const SWIM_USER = process.env.SWIM_USER || '';
+const SWIM_PASS = process.env.SWIM_PASS || '';
+const SWIM_QUEUE = process.env.SWIM_QUEUE || '';
 const SWIM_URL = process.env.SWIM_URL || 'tcps://ems2.swim.faa.gov:55443';
 const SWIM_VPN = process.env.SWIM_VPN || 'FDPS';
 
@@ -500,7 +505,7 @@ async function handleAdsbStates(query, res) {
 // FAA SWIM SCDS — the primary free enrichment source now that FlightAware is gone. Ported from
 // v249's scaffolding (it parsed FIXM messages correctly but nothing consumed the output — the
 // client never even connected). v250 turns this ON by default (creds are required to boot) and
-// actually feeds SWIM's arrival/departure pings into the movements board.
+// actually feeds SWIM's arrival/departure pings into the movements board when SWIM_ENABLED=1.
 // ============================================================================================
 var swimStats = { connected: false, msgs: 0, arrivals: 0, departures: 0, reason: '' };
 var movements = { arrivals: new Map(), departures: new Map() }; // key: ident (tail or callsign, uppercased)
@@ -847,7 +852,12 @@ async function main() {
   server.listen(PORT, '0.0.0.0', () => log('Skyway v250 — http://0.0.0.0:' + PORT, 'OK'));
   await getToken();
   pollOpenSkyFlights();
-  connectSWIM();
+  if (SWIM_ENABLED) {
+    connectSWIM();
+  } else {
+    swimStats.reason = 'SWIM_ENABLED!=1 (OpenSky + adsb.lol only)';
+    log('SWIM skipped — set SWIM_ENABLED=1 with SWIM_USER/SWIM_PASS/SWIM_QUEUE when SWIFT is restored', 'WARN');
+  }
   log('Views: /dispatch  /line-room  /arrivals', 'OK');
   log('AeroDataBox: ' + (ADB_ENABLED ? ('ENABLED, budget ' + ADB_MONTHLY_UNIT_BUDGET + ' units/mo') : 'disabled (set ADB_ENABLED=1 to turn on)'), 'INFO');
   log('ADSB primary: ' + ADSB_PRIMARY + ' (set ADSB_PRIMARY=opensky to force OpenSky)', 'INFO');
