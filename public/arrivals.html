@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Skyway — Arrivals</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0b0e14;--panel:#161b26;--panel2:#1b2130;--bd:#333c52;--t1:#f4f6fb;--t2:#c3c9d6;--t3:#7f889c;--blue:#3b82f6;--cyan:#22d3ee;--green:#4ade80;--amber:#fbbf24;--red:#f87171;--mono:'JetBrains Mono',ui-monospace,monospace;--sans:'Inter',system-ui,sans-serif}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overscroll-behavior-y:contain}
+body{font-family:var(--sans);background:var(--bg);color:var(--t1);-webkit-font-smoothing:antialiased}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:10px max(14px,env(safe-area-inset-right)) 10px max(14px,env(safe-area-inset-left));padding-top:max(10px,env(safe-area-inset-top));background:linear-gradient(180deg,#1c2233,#141926);border-bottom:1px solid var(--bd);position:sticky;top:0;z-index:100}
+.tb-brand{display:flex;align-items:center;gap:8px}
+.tb-brand b{font-family:var(--mono);font-size:15px;font-weight:800}
+.tb-brand span{font-family:var(--mono);font-size:9px;font-weight:700;color:var(--t3);letter-spacing:1px;border:1px solid var(--bd);border-radius:4px;padding:2px 6px}
+.tb-status{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:9px;font-weight:700;color:var(--t3)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:bk 2s infinite}
+.dot.off{background:var(--red);animation:none}
+@keyframes bk{0%,100%{opacity:1}50%{opacity:.25}}
+.tabs{display:flex;gap:0;padding:8px 12px 0;background:var(--bg);position:sticky;top:48px;z-index:99}
+.tab{flex:1;text-align:center;padding:11px 0;font-family:var(--mono);font-size:13px;font-weight:800;letter-spacing:.5px;color:var(--t3);background:var(--panel);border:1px solid var(--bd);cursor:pointer}
+.tab:first-child{border-radius:8px 0 0 8px;border-right:none}
+.tab:last-child{border-radius:0 8px 8px 0}
+.tab.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.count-badge{display:inline-block;margin-left:6px;background:rgba(255,255,255,.18);border-radius:8px;padding:0 6px;font-size:11px}
+#list{padding:10px 12px 24px}
+.row{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:12px 12px;margin-bottom:8px;min-height:60px}
+.row.landed,.row.departed-flash{border-color:var(--green);box-shadow:0 0 0 1px rgba(74,222,128,.25)}
+.row.final{border-color:var(--amber)}
+.hero{flex:1;min-width:0}
+.tail{font-family:var(--mono);font-size:22px;font-weight:800;color:var(--t1);letter-spacing:.3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.meta{margin-top:4px;display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-family:var(--mono);font-size:12px;color:var(--t2)}
+.meta .muted{color:var(--t3)}
+.op-pill{display:inline-block;font-size:10px;font-weight:900;padding:2px 6px;border-radius:4px;letter-spacing:.4px;line-height:1.4}
+.spot-chip{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--cyan);background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.25);border-radius:6px;padding:3px 8px;margin-top:6px}
+.spot-chip.unassigned{color:var(--t3);background:transparent;border-color:var(--bd)}
+.right{text-align:right;flex-shrink:0}
+.eta{font-family:var(--mono);font-size:17px;font-weight:800}
+.eta.soon{color:var(--amber)}
+.eta.landed{color:var(--green)}
+.eta.far{color:var(--t2)}
+.eta-lbl{font-family:var(--mono);font-size:9px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.6px;margin-top:2px}
+.pax-chip{display:inline-block;margin-top:6px;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--t2);background:var(--panel2);border:1px solid var(--bd);border-radius:5px;padding:2px 7px}
+.tow-chip{display:inline-block;margin-top:6px;font-family:var(--mono);font-size:10px;color:var(--amber);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.empty{text-align:center;padding:60px 20px;color:var(--t3);font-family:var(--mono);font-size:13px}
+.refresh-hint{text-align:center;padding:10px;font-family:var(--mono);font-size:10px;color:var(--t3)}
+@media (orientation:landscape){
+  #list{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px 12px 24px}
+  .row{margin-bottom:0}
+}
+@media (min-width:900px) and (orientation:landscape){
+  #list{grid-template-columns:1fr 1fr 1fr}
+}
+</style>
+</head>
+<body>
+<div class="topbar">
+<div class="tb-brand"><b>SKYWAY</b><span>ARRIVALS</span></div>
+<div class="tb-status"><div class="dot" id="dot"></div><span id="statusTxt">CONNECTING</span></div>
+</div>
+<div class="tabs">
+<div class="tab active" id="tabArr" onclick="switchTab('arrivals')">ARRIVALS<span class="count-badge" id="cntArr">0</span></div>
+<div class="tab" id="tabDep" onclick="switchTab('departures')">DEPARTURES<span class="count-badge" id="cntDep">0</span></div>
+</div>
+<div id="list"><div class="empty">Loading…</div></div>
+<div class="refresh-hint">Read-only — pax / spot / flags are set in Dispatch. Pull down to refresh.</div>
+<script>
+// ============================================================================================
+// SKYWAY v250 — /arrivals view. Mobile + Honeywell CT47 (5.5" rugged Android, gloved touch).
+// Read-only by design: no fetch() call in this file ever sends anything but GET. 60px+ row
+// height, big tail-number hero, portrait + landscape via CSS grid reflow (see @media above).
+// Deliberately lean — no Leaflet/map, no ramp drag-drop, no edit affordances — so it stays fast
+// on a rugged tablet's limited hardware, matching what the spec actually asked this view to do.
+// ============================================================================================
+var VIEW_MODE='arrivals';
+var activeTab='arrivals';
+var HELI={S76:1,EC35:1,EC45:1,B06:1,A139:1,AS50:1,AS55:1,EC30:1,EC55:1,H60:1,R22:1,R44:1,R66:1,BK17:1,B407:1,B412:1,B429:1,H500:1,MD52:1,MD60:1,AS65:1,S92:1,AW09:1,AW69:1,AW18:1,H135:1,H145:1,H160:1,H175:1,H215:1,H225:1,B505:1,B105:1,B212:1};
+var OP_BRANDS={
+  'NetJets':{label:'NJ',bg:'#fff',fg:'#dc2626',border:'#dc2626'},'NetJets EU':{label:'NJ',bg:'#fff',fg:'#dc2626',border:'#dc2626'},
+  'EJM':{label:'EJM',bg:'#fff',fg:'#7f1d1d',border:'#7f1d1d'},'Flexjet':{label:'FX',bg:'#0a3b78',fg:'#d4a017',border:'#0a3b78'},
+  'Corporate Wings':{label:'CW',bg:'#0a3b78',fg:'#fff',border:'#d4a017'},'FXAIR':{label:'FXA',bg:'#0a3b78',fg:'#fbbf24',border:'#0a3b78'},
+  'VistaJet':{label:'VJ',bg:'#374151',fg:'#dc2626',border:'#374151'},'PlaneSense':{label:'PS',bg:'#0e7490',fg:'#fff',border:'#0e7490'},
+  'Airshare':{label:'AS',bg:'#0369a1',fg:'#fff',border:'#0369a1'},'Wheels Up':{label:'WU',bg:'#fff',fg:'#1e3a8a',border:'#1e3a8a'},
+  'Baker Aviation':{label:'BA',bg:'#1e3a8a',fg:'#fff',border:'#1e3a8a'},'XO':{label:'XO',bg:'#000',fg:'#fff',border:'#000'},
+  'Solairus':{label:'SOL',bg:'#1f4e8c',fg:'#fff',border:'#1f4e8c'},'JetEdge':{label:'JE',bg:'#5b21b6',fg:'#fff',border:'#5b21b6'},
+  'Jet Access':{label:'JA',bg:'#0e7490',fg:'#fff',border:'#0e7490'},'Clay Lacy':{label:'CL',bg:'#0a4f8c',fg:'#fff',border:'#0a4f8c'},
+  'Jet Linx':{label:'JL',bg:'#1f2937',fg:'#fff',border:'#1f2937'},'Jet Aviation':{label:'JTA',bg:'#0a4f8c',fg:'#fff',border:'#0a4f8c'},
+  'Priester':{label:'PR',bg:'#374151',fg:'#fff',border:'#374151'}
+};
+function htmlEsc(v){if(v==null)return'';return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function safeStr(v){return(v==null)?'':String(v);}
+function opPill(op){
+  var b=OP_BRANDS[op];if(!b)return'';
+  return '<span class="op-pill" style="background:'+b.bg+';color:'+b.fg+';border:1px solid '+b.border+'">'+b.label+'</span>';
+}
+function calcMins(iso){if(!iso)return -1;return Math.round((new Date(iso).getTime()-Date.now())/60000);}
+function fmtHM(mins){if(mins==null)return'—';var m=Math.abs(mins);var h=Math.floor(m/60),mm=m%60;return(h>0?h+'h ':'')+mm+'m';}
+
+function switchTab(t){
+  activeTab=t;
+  document.getElementById('tabArr').classList.toggle('active',t==='arrivals');
+  document.getElementById('tabDep').classList.toggle('active',t==='departures');
+  render();
+}
+
+var boardData={arrivals:[],departures:[]};
+function load(){
+  Promise.all([
+    fetch('/api/arrivals').then(function(r){return r.json();}).catch(function(){return[];}),
+    fetch('/api/departures').then(function(r){return r.json();}).catch(function(){return[];})
+  ]).then(function(res){
+    boardData.arrivals=res[0]||[];
+    boardData.departures=res[1]||[];
+    document.getElementById('cntArr').textContent=boardData.arrivals.length;
+    document.getElementById('cntDep').textContent=boardData.departures.length;
+    render();
+  });
+}
+function statusFor(f,isArr){
+  if(isArr){
+    var m=calcMins(f.arriveISO);
+    if(f.arrived)return{txt:'LANDED',cls:'landed',lbl:''};
+    if(m<=5&&m>=0)return{txt:'FINAL',cls:'final',lbl:'min'};
+    if(m<0&&!f.arrived)return{txt:'LANDED',cls:'landed',lbl:''};
+    return{txt:fmtHM(m),cls:m<=15?'soon':m<=60?'':'far',lbl:'ETA'};
+  } else {
+    if(f.departed)return{txt:'GONE',cls:'landed',lbl:''};
+    var m2=calcMins(f.departISO);
+    return{txt:fmtHM(m2),cls:m2<=15?'soon':m2<=60?'':'far',lbl:'ETD'};
+  }
+}
+function render(){
+  var isArr=activeTab==='arrivals';
+  var data=isArr?boardData.arrivals:boardData.departures;
+  var list=document.getElementById('list');
+  if(!data||!data.length){list.innerHTML='<div class="empty">No '+(isArr?'arrivals':'departures')+' right now</div>';return;}
+  var h='';
+  for(var i=0;i<data.length;i++){
+    var f=data[i];
+    var st=statusFor(f,isArr);
+    var heli=HELI[f.type]?'🚁 ':'';
+    var loc=isArr?f.from:f.to;
+    var spotHtml=f.spot?'<span class="spot-chip">'+htmlEsc(f.spot)+'</span>':'<span class="spot-chip unassigned">— no spot —</span>';
+    var paxHtml=(f.pax!=null&&f.pax!=='')?'<span class="pax-chip">'+htmlEsc(f.pax)+' pax</span>':'';
+    var towHtml=f.towNotes?'<span class="tow-chip" title="'+htmlEsc(f.towNotes)+'">📝 '+htmlEsc(f.towNotes)+'</span>':'';
+    var rowCls=st.cls==='landed'?'landed':(st.cls==='final'?'final':'');
+    h+='<div class="row '+rowCls+'">'+
+      '<div class="hero">'+
+        '<div class="tail">'+heli+htmlEsc(f.ident||'—')+(f.callsign&&f.callsign!==f.ident?' <span style="color:var(--t3);font-size:13px;font-weight:600">'+htmlEsc(f.callsign)+'</span>':'')+opPill(f.operator)+'</div>'+
+        '<div class="meta"><span>'+htmlEsc(f.type||'—')+'</span><span class="muted">·</span><span>'+(isArr?'FROM ':'TO ')+htmlEsc(loc||'—')+'</span></div>'+
+        spotHtml+paxHtml+towHtml+
+      '</div>'+
+      '<div class="right"><div class="eta '+st.cls+'">'+htmlEsc(st.txt)+'</div>'+(st.lbl?'<div class="eta-lbl">'+st.lbl+'</div>':'')+'</div>'+
+    '</div>';
+  }
+  list.innerHTML=h;
+}
+
+function connectWS(){
+  try{
+    var proto=location.protocol==='https:'?'wss:':'ws:';
+    var ws=new WebSocket(proto+'//'+location.host+'/ws');
+    ws.onopen=function(){document.getElementById('dot').classList.remove('off');document.getElementById('statusTxt').textContent='LIVE';};
+    ws.onmessage=function(ev){
+      try{
+        var msg=JSON.parse(ev.data);
+        if(msg.type==='board'||msg.type==='ramp_update')load();
+      }catch(e){}
+    };
+    ws.onclose=function(){document.getElementById('dot').classList.add('off');document.getElementById('statusTxt').textContent='RECONNECTING';setTimeout(connectWS,4000);};
+    ws.onerror=function(){try{ws.close();}catch(e){}};
+  }catch(e){}
+}
+load();
+connectWS();
+setInterval(load,30000); // fallback poll if WS drops silently
+</script>
+</body>
+</html>

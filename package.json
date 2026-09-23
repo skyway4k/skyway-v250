@@ -1,0 +1,14 @@
+{
+  "name": "skyway",
+  "version": "250.0.0",
+  "description": "Skyway SFO FBO tracker — dispatch / line-room / arrivals, shared Postgres backend, SWIM+OpenSky only (AeroDataBox optional/capped).",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js"
+  },
+  "dependencies": {
+    "solclientjs": "^10.18.0",
+    "ws": "^8.16.0",
+    "pg": "^8.13.1"
+  }
+}

@@ -1,0 +1,53 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# Deploy: push this repo to GitHub, then in Render: New > Blueprint > pick the repo.
+# Two services: the web app, and a free Postgres instance for the shared ramp state
+# (pax / spot / flags / tow notes) that /dispatch, /line-room and /arrivals all read/write.
+#
+# Free web tier: $0/mo, sleeps after 15 min with no HTTP traffic, ~30-50s cold start on the
+# next request. Combined with IDLE_PAUSE_MINUTES in server.js, you pay/spend nothing on OpenSky
+# or AeroDataBox whenever nobody has a tab open. If the cold start bugs you, change
+# `plan: free` to `plan: starter` ($7/mo, always warm). The free Postgres instance expires
+# after 30 days on Render's free tier — worth knowing before you rely on it long-term; Neon or
+# Supabase's free tiers don't have that expiry if you'd rather point DATABASE_URL at one of those.
+
+databases:
+  - name: skyway-db
+    plan: free
+    region: oregon
+
+services:
+  - type: web
+    name: skyway-sfo
+    runtime: docker
+    plan: free
+    region: oregon
+    healthCheckPath: /status
+    envVars:
+      - key: PORT
+        value: 8766
+      - key: DATABASE_URL
+        fromDatabase:
+          name: skyway-db
+          property: connectionString
+      - key: OSKY_ID
+        sync: false
+      - key: OSKY_SECRET
+        sync: false
+      - key: SWIM_USER
+        sync: false
+      - key: SWIM_PASS
+        sync: false
+      - key: SWIM_QUEUE
+        sync: false
+      - key: ADB_ENABLED
+        value: "0"
+      - key: ADB_KEY
+        sync: false
+      - key: ADB_HOST
+        value: aerodatabox.p.rapidapi.com
+      - key: ADB_MONTHLY_UNIT_BUDGET
+        value: "600"
+      - key: IDLE_PAUSE_MINUTES
+        value: "10"
+      - key: AIRPORT_ICAO
+        value: KSFO
