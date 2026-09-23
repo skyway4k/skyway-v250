@@ -791,6 +791,7 @@ async function pollAdsbInboundBoard() {
     }
     var list = Array.isArray(data.ac) ? data.ac : [];
     var seen = 0, upserted = 0;
+    var keep = {};
     if (!list.length && Array.isArray(data.states)) {
       list = data.states.map(function (st) {
         return {
@@ -835,10 +836,16 @@ async function pollAdsbInboundBoard() {
         alt: Math.round(alt),
         distNm: Math.round(distNm * 10) / 10
       });
+      keep[key] = true;
       upserted++;
     }
-    log('[ADSB board] seen=' + seen + ' inbound=' + upserted + ' radius=' + dist + 'nm states=' + (data.states ? data.states.length : 0), upserted ? 'OK' : 'WARN');
-    if (upserted) broadcast({ type: 'board' });
+    // Drop stale adsb-inbound rows not seen this poll so the board tracks live traffic.
+    var dropped = 0;
+    movements.arrivals.forEach(function (f, key) {
+      if (f && f.source === 'adsb-inbound' && !keep[key]) { movements.arrivals.delete(key); dropped++; }
+    });
+    log('[ADSB board] seen=' + seen + ' inbound=' + upserted + ' dropped=' + dropped + ' radius=' + dist + 'nm states=' + (data.states ? data.states.length : 0), upserted ? 'OK' : 'WARN');
+    if (upserted || dropped) broadcast({ type: 'board' });
   } catch (e) {
     log('[ADSB board] ' + e.message, 'WARN');
   }

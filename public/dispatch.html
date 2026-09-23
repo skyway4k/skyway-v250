@@ -938,7 +938,7 @@ function isGA(cs,cat){
 }
 
 var APT={KSFO:{lat:37.62818,lon:-122.38487,n:'San Francisco Intl'},KJFK:{lat:40.641,lon:-73.778,n:'JFK Intl'},KLAX:{lat:33.943,lon:-118.408,n:'Los Angeles Intl'},KORD:{lat:41.974,lon:-87.907,n:'Chicago OHare'},KDEN:{lat:39.856,lon:-104.674,n:'Denver Intl'},KSEA:{lat:47.450,lon:-122.309,n:'Seattle-Tacoma'}};
-var airport='KSFO',radius=800;
+var airport='KSFO',radius=60;
 var leafMap,markers={},allAC=[],gaAC=[],trackHistory={},trackLines={},faMapSet={},identToMarkerId={};
 
 function buildFaMapSet(){
@@ -967,7 +967,11 @@ function buildFaMapSet(){
       if(dIdent&&!faMapSet[dIdent]){faMapSet[dIdent]=info2;faMapSet[dIdent.replace(/-/g,'')]=info2;}
       if(dCall&&!faMapSet[dCall]){faMapSet[dCall]=info2;faMapSet[dCall.replace(/-/g,'')]=info2;}
     }
-  }).catch(function(){});
+    console.log('[MAP] faMapSet built:',Object.keys(faMapSet).length,'keys');
+    if(window.allAC&&window.allAC.length){
+      try{drawMap(window.allAC);}catch(e){console.error('[drawMap after faMapSet]',e);}
+    }
+  }).catch(function(e){console.warn('[buildFaMapSet]',e);});
 }
 
 // Global error handler - log full stack trace for uncaught errors
@@ -1344,8 +1348,8 @@ function initMap(){
   //   4. The periodic health check now confirms "no tiles" across 2 consecutive 5s checks
   //      before nudging redraw, so it doesn't race during normal pan/zoom transitions.
   var tileProviders=[
-    {name:'OSM',url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',sub:null,theme:'light'},
     {name:'ESRI-DarkGray',url:'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',sub:null,theme:'dark'},
+    {name:'OSM',url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',sub:null,theme:'light'},
     {name:'CARTO-Voyager',url:'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',sub:'abcd',theme:'light'},
     {name:'CARTO-Dark',url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',sub:'abcd',theme:'dark'}
   ];
@@ -1599,6 +1603,17 @@ function drawMap(ac){
     if(distNm>fetchRadiusNm+5)continue; // slight slack past API radius
     var board=lookupFa(a);
     if(board&&board.type==='arr')filtered.push(a);
+  }
+  // If board match set is empty (race before /api/arrivals returns), still show close traffic
+  // so the map is never a dead black pane while feeds are healthy.
+  if(!filtered.length&&ac.length){
+    for(var fi2=0;fi2<ac.length;fi2++){
+      var a2=ac[fi2];
+      if(a2.lat==null||a2.lon==null||a2.gnd)continue;
+      var d2=nmDist(sfoLat,sfoLon,a2.lat,a2.lon);
+      if(d2<=35&&(a2.ft==null||a2.ft<=18000))filtered.push(a2);
+    }
+    console.log('[MAP] provisional nearby (no board matches yet):',filtered.length);
   }
   console.log('[MAP] arrival matches shown:',filtered.length,'of',ac.length,'ADS-B targets');
 
@@ -2099,17 +2114,17 @@ function fetchBoards(){
     var now=Date.now();
     if(arr)for(var i=0;i<arr.length;i++){
       var f=arr[i];
-      var _depId=(f.ident||'').replace(/[^a-zA-Z0-9]/g,'');
+      var _depId=safeStr(f.ident).replace(/[^a-zA-Z0-9]/g,'');
       if(window._manuallyDeparted&&window._manuallyDeparted[_depId])continue;
+      // Live ADS-B inbound heuristic: arriveISO is last-seen, not a schedule — keep in active.
+      if(f.source==='adsb-inbound'||f.source==='adsb'){active.push(f);continue;}
       var arrTime=f.arriveISO?new Date(f.arriveISO).getTime():0;
       var minsSinceArr=arrTime>0?Math.round((now-arrTime)/60000):-999;
       if(f.arrived||minsSinceArr>5){
-        // Landed: keep in active for 5 min with LANDED tag, then move to completed
         if(minsSinceArr>=0&&minsSinceArr<5){f._landed=true;active.push(f);}
         else completed.push(f);
       }
       else if(minsSinceArr>=0&&minsSinceArr<=5){
-        // Arrival time passed but <5 min ago — show as LANDED in active
         f._landed=true;active.push(f);
       }
       else active.push(f);
