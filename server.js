@@ -599,7 +599,7 @@ async function handleAdsbStates(query, res) {
 // turboprop types; drop airline callsigns (UAL/AAL/...) and airliner/heavy ICAO types.
 // Applied to ADS-B, SWIM/TFMS, and OpenSky /flights so boards stay GA/biz-heavy.
 // ============================================================================================
-var AIRLINE_CS = new Set(('UAL AAL DAL SWA ASA JBU NKS FFT SKW EDV RPA ASH ENY QXE HAL CPA BAW AFR DLH UAE CSG CCA CES CSN CHH CES FDX UPS GTI ATN ABX GTI VRD SCX WOA UAL CKS MPO').split(/\s+/));
+var AIRLINE_CS = new Set(('UAL AAL DAL SWA ASA JBU NKS FFT SKW EDV RPA ASH ENY QXE HAL CPA BAW AFR DLH UAE CSG CCA CES CSN CHH CES FDX UPS GTI ATN ABX GTI VRD SCX WOA UAL CKS MPO JSX').split(/\s+/));
 var FRAC_CS = /^(EJA|EJM|LXJ|TWY|JTL|XOJ|OPT|JRE|GTT|DPJ|VJT|GAJ|HRT|TIV|LNJ|CVC|CRE|QQE)/;
 function isGaBizTraffic(flight, reg, typeCode) {
   var cs = String(flight || '').trim().toUpperCase();
