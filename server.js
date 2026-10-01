@@ -1823,12 +1823,130 @@ function enrichMovementLoc(f, kind) {
 // Official inquiry pages (no paid key). Cache by N-reg in memory + Postgres so we do not
 // hammer registry.faa.gov. ICAO type still prefers ADS-B `t` / SWIM equipment when present.
 // ============================================================================================
+
+// Official FAA Releasable Aircraft Database (MASTER + ACFTREF) — free bulk download.
+// HTML Aircraft Inquiry returns 403 from many cloud IPs (incl. Render); the zip does not.
+var FAA_DB_URL = process.env.FAA_DB_URL || 'https://registry.faa.gov/database/ReleasableAircraft.zip';
+var FAA_DB_DIR = process.env.FAA_DB_DIR || path.join(require('os').tmpdir(), 'skyway-faa');
+var FAA_DB_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
+var faaDbByN = new Map(); // N123AB → { make, rawModel, model, icaoType }
+var faaDbStatus = { loaded: false, count: 0, loadedAt: 0, error: null, source: null };
+var faaDbLoading = null;
+
+function faaDbLookup(nKey) {
+  if (!nKey) return null;
+  return faaDbByN.get(nKey) || faaDbByN.get(normIdent(nKey)) || null;
+}
+
+async function ensureFaaDb(force) {
+  if (!force && faaDbStatus.loaded && (Date.now() - faaDbStatus.loadedAt) < FAA_DB_MAX_AGE_MS) {
+    return faaDbStatus;
+  }
+  if (faaDbLoading) return faaDbLoading;
+  faaDbLoading = (async function () {
+    var fsP = fs.promises;
+    var { execFile } = require('child_process');
+    var execFileP = function (cmd, args, opts) {
+      return new Promise(function (resolve, reject) {
+        execFile(cmd, args, opts || {}, function (err, stdout, stderr) {
+          if (err) { err.stderr = stderr; reject(err); return; }
+          resolve(stdout);
+        });
+      });
+    };
+    try {
+      await fsP.mkdir(FAA_DB_DIR, { recursive: true });
+      var zipPath = path.join(FAA_DB_DIR, 'ReleasableAircraft.zip');
+      var needDownload = force;
+      try {
+        var st = await fsP.stat(zipPath);
+        if (!st || !st.size || (Date.now() - st.mtimeMs) > FAA_DB_MAX_AGE_MS) needDownload = true;
+      } catch (e) { needDownload = true; }
+
+      if (needDownload) {
+        log('[FAA DB] downloading releasable registry zip…', 'INFO');
+        var res = await fetch(FAA_DB_URL, {
+          headers: { 'User-Agent': 'SkywaySFOBoard/250 (KSFO FBO; +https://skyway-sfo.onrender.com)' }
+        });
+        if (!res.ok) throw new Error('download HTTP ' + res.status);
+        var buf = Buffer.from(await res.arrayBuffer());
+        await fsP.writeFile(zipPath, buf);
+        log('[FAA DB] downloaded ' + Math.round(buf.length / 1048576) + 'MB', 'OK');
+      }
+
+      // Extract MASTER + ACFTREF only
+      await execFileP('unzip', ['-o', '-j', zipPath, 'MASTER.txt', 'ACFTREF.txt', '-d', FAA_DB_DIR], { timeout: 120000 });
+      var refPath = path.join(FAA_DB_DIR, 'ACFTREF.txt');
+      var masterPath = path.join(FAA_DB_DIR, 'MASTER.txt');
+
+      var readline = require('readline');
+      function readCsvLines(filePath, onLine) {
+        return new Promise(function (resolve, reject) {
+          var stream = fs.createReadStream(filePath, { encoding: 'utf8' });
+          var rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+          var first = true;
+          rl.on('line', function (line) {
+            if (first) { first = false; return; } // skip header
+            if (line) onLine(line);
+          });
+          rl.on('close', resolve);
+          rl.on('error', reject);
+          stream.on('error', reject);
+        });
+      }
+
+      var refMap = new Map(); // code → {make, model}
+      await readCsvLines(refPath, function (rl) {
+        var rp = rl.split(',');
+        if (rp.length < 3) return;
+        var code = String(rp[0] || '').trim();
+        if (!code) return;
+        refMap.set(code, { make: String(rp[1] || '').trim(), model: String(rp[2] || '').trim() });
+      });
+
+      var next = new Map();
+      await readCsvLines(masterPath, function (ml) {
+        var mp = ml.split(',');
+        if (mp.length < 3) return;
+        var nNum = String(mp[0] || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (!nNum) return;
+        var nKey = nNum.charAt(0) === 'N' ? nNum : ('N' + nNum);
+        if (!isNRegIdent(nKey)) return;
+        var mfrCode = String(mp[2] || '').trim();
+        var ref = refMap.get(mfrCode) || {};
+        var rawModel = ref.model || '';
+        var make = ref.make || '';
+        var icao = faaIcaoFromModel(rawModel);
+        var layman = ICAO_TO_LAYMAN[icao] || faaLaymanModel(make, rawModel);
+        next.set(nKey, { make: make, rawModel: rawModel, model: layman, icaoType: icao });
+      });
+      faaDbByN = next;
+      faaDbStatus = { loaded: true, count: next.size, loadedAt: Date.now(), error: null, source: 'releasable-zip' };
+      log('[FAA DB] indexed ' + next.size + ' N-numbers from MASTER+ACFTREF', 'OK');
+      // Free extracted text (keep zip for refresh)
+      try { await fsP.unlink(masterPath); } catch (e) {}
+      try { await fsP.unlink(refPath); } catch (e) {}
+      return faaDbStatus;
+    } catch (e) {
+      faaDbStatus = {
+        loaded: faaDbByN.size > 0, count: faaDbByN.size, loadedAt: faaDbStatus.loadedAt || 0,
+        error: e.message, source: faaDbStatus.source || null
+      };
+      log('[FAA DB] load failed: ' + e.message, 'WARN');
+      return faaDbStatus;
+    } finally {
+      faaDbLoading = null;
+    }
+  })();
+  return faaDbLoading;
+}
+
 var faaMemCache = new Map(); // N123AB → { icaoType, model, make, rawModel, ok, fetchedAt, pending? }
 var faaInflight = new Map();
 var faaLastFetchAt = 0;
 var FAA_MIN_INTERVAL_MS = 900;
 var FAA_POS_TTL_MS = 30 * 24 * 3600 * 1000;
-var FAA_NEG_TTL_MS = 24 * 3600 * 1000;
+var FAA_NEG_TTL_MS = 30 * 60 * 1000; // short — HTML inquiry often 403s from cloud IPs
 var ICAO_TO_LAYMAN = {
   C56X:'Citation Excel', C68A:'Citation Latitude', C680:'Citation Sovereign', C700:'Citation Longitude',
   C750:'Citation X', C25A:'Citation CJ2', C25B:'Citation CJ3', C25C:'Citation CJ4', C525:'Citation CJ1',
@@ -1975,19 +2093,38 @@ async function faaFetchRemote(nKey) {
 async function lookupFaaRegistry(reg) {
   var nKey = faaNKey(reg);
   if (!nKey) return null;
+  // Prefer official releasable DB (works from Render); HTML inquiry often 403s on cloud IPs.
+  if (!faaDbStatus.loaded) {
+    try { await ensureFaaDb(false); } catch (e) {}
+  }
+  var fromZip = faaDbLookup(nKey);
+  if (fromZip && (fromZip.rawModel || fromZip.icaoType || fromZip.model)) {
+    var hit = {
+      icaoType: fromZip.icaoType || '',
+      model: fromZip.model || '',
+      make: fromZip.make || '',
+      rawModel: fromZip.rawModel || '',
+      ok: true,
+      fetchedAt: Date.now(),
+      source: 'releasable-db'
+    };
+    faaMemCache.set(nKey, hit);
+    return hit;
+  }
   var mem = faaMemCache.get(nKey);
   if (mem && faaCacheFresh(mem)) return mem;
   if (faaInflight.has(nKey)) return faaInflight.get(nKey);
   var p = (async function () {
     try {
       var db = await faaLoadFromDb(nKey);
-      if (db && faaCacheFresh(db)) {
+      if (db && faaCacheFresh(db) && db.ok) {
         faaMemCache.set(nKey, db);
         return db;
       }
+      // HTML fallback (may 403 on Render — short neg cache)
       var entry = await faaFetchRemote(nKey);
       faaMemCache.set(nKey, entry);
-      await faaSaveToDb(nKey, entry);
+      if (entry.ok) await faaSaveToDb(nKey, entry);
       return entry;
     } catch (e) {
       log('[FAA] lookup ' + nKey + ' failed: ' + e.message, 'WARN');
@@ -2053,9 +2190,9 @@ function scheduleFaaBoardEnrichment(kindHint) {
           if (normalizeIcaoType(mov.type) && mov.model) continue;
           var enriched = await faaEnrichMovement(Object.assign({}, mov));
           if (!enriched) continue;
-          if (enriched.type && !mov.type) mov.type = enriched.type;
-          if (enriched.model && !mov.model) mov.model = enriched.model;
-          if (enriched.reg && !mov.reg) mov.reg = enriched.reg;
+          if (enriched.type) mov.type = mov.type || enriched.type;
+          if (enriched.model) mov.model = mov.model || enriched.model;
+          if (enriched.reg) mov.reg = mov.reg || enriched.reg;
           if (enriched.ident && isNRegIdent(normIdent(enriched.ident)) && !isNRegIdent(normIdent(mov.ident))) mov.ident = enriched.ident;
           if ((mov.type || '') !== beforeType || (mov.model || '') !== beforeModel || (mov.reg || '') !== beforeReg) changed++;
         }
@@ -2208,7 +2345,7 @@ function buildStatusPayload() {
   return Object.assign(getCreditSummary(), {
     swim: swimStats,
     adb: adbStatus(),
-    faaRegistry: { cacheSize: faaMemCache.size, inflight: faaInflight.size },
+    faaRegistry: { cacheSize: faaMemCache.size, inflight: faaInflight.size, dbLoaded: !!faaDbStatus.loaded, dbCount: faaDbStatus.count || 0, dbError: faaDbStatus.error || null },
     ladd: { loaded: !!laddStatus.loaded, count: laddStatus.count || 0, source: laddStatus.source || 'stub', error: laddStatus.error || null },
     adsbLol: Object.assign(adsbLolStatusPayload(), {
       backoffSecondsRemaining: Math.max(0, Math.ceil((adsbLolBackoffUntil - Date.now()) / 1000))
@@ -2337,6 +2474,9 @@ wss.on('connection', ws => {
 // ------------------------------------------------------------------------------------------
 setInterval(pollOpenSkyFlights, 120000);
 setInterval(pollAdsbInboundBoard, 45000);
+ensureFaaDb(false).catch(function (e) { log('[FAA DB] boot load: ' + e.message, 'WARN'); });
+setInterval(function () { ensureFaaDb(false).catch(function () {}); }, 24 * 3600 * 1000);
+
 setInterval(() => broadcast({ type: 'status', data: buildStatusPayload() }), 15000);
 setInterval(pruneAndAccumulateGround, 60000);
 setInterval(function () { if (pruneDivertedMovements()) broadcast({ type: 'board' }); }, 60000);

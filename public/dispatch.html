@@ -74,19 +74,19 @@ body{font-family:var(--sans);background:var(--b0);color:var(--t1);min-height:100
    icon columns (OP, STATUS) use fixed pixel widths because they hold same-size pills regardless
    of how wide the table is. fr-sized pill columns get visually huge on wide screens for no
    reason (an "NJ" pill doesn't need 80px). */
-.cols{display:grid;grid-template-columns:0.52fr 28px 52px 1.15fr 1.35fr .95fr .95fr .8fr .8fr .55fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
-.cols.ca-done{display:grid;grid-template-columns:0.52fr 28px 52px 1.15fr 1.35fr .95fr .95fr .85fr .8fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
-.cols.cd-done{display:grid;grid-template-columns:0.52fr 28px 52px 1.15fr 1.35fr .95fr .85fr .8fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
-.cols.ca{grid-template-columns:0.52fr 28px 52px 1.15fr 1.35fr .95fr .95fr .8fr .8fr .55fr}
-.cols.cd{grid-template-columns:0.52fr 28px 52px 1.15fr 1.35fr .95fr .8fr .8fr}
+.cols{display:grid;grid-template-columns:0.95fr 28px 52px 1.15fr 1.35fr .95fr .95fr .8fr .8fr .55fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
+.cols.ca-done{display:grid;grid-template-columns:0.95fr 28px 52px 1.15fr 1.35fr .95fr .95fr .85fr .8fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
+.cols.cd-done{display:grid;grid-template-columns:0.95fr 28px 52px 1.15fr 1.35fr .95fr .85fr .8fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
+.cols.ca{grid-template-columns:0.95fr 28px 52px 1.15fr 1.35fr .95fr .95fr .8fr .8fr .55fr}
+.cols.cd{grid-template-columns:0.95fr 28px 52px 1.15fr 1.35fr .95fr .8fr .8fr}
 .cols span:first-child{text-align:left;padding-left:16px}
 .bb{flex:1;padding:5px 8px}
-.fr{display:grid;grid-template-columns:0.52fr 28px 52px 1.15fr 1.35fr .95fr .95fr .8fr .8fr .55fr;gap:5px;align-items:center;padding:9px 8px;background:var(--b1);border:1px solid var(--bd);border-radius:7px;margin-bottom:3px;cursor:pointer;transition:all .12s;box-shadow:0 1px 2px rgba(0,0,0,.02);font-size:14px}
+.fr{display:grid;grid-template-columns:0.95fr 28px 52px 1.15fr 1.35fr .95fr .95fr .8fr .8fr .55fr;gap:5px;align-items:center;padding:9px 8px;background:var(--b1);border:1px solid var(--bd);border-radius:7px;margin-bottom:3px;cursor:pointer;transition:all .12s;box-shadow:0 1px 2px rgba(0,0,0,.02);font-size:14px}
 .fr > *{min-width:0;overflow:hidden}
 /* .fr > .fi keeps overflow:hidden from the parent rule above — badges wrap inside the cell */
-.fr.arr-done{grid-template-columns:0.52fr 28px 52px 1.15fr 1.35fr .95fr .95fr .85fr .8fr}
-.fr.dep{grid-template-columns:0.52fr 28px 52px 1.15fr 1.35fr .95fr .8fr .8fr}
-.fr.dep-simple{grid-template-columns:0.52fr 28px 52px 1.15fr 1.35fr .95fr .85fr .8fr}
+.fr.arr-done{grid-template-columns:0.95fr 28px 52px 1.15fr 1.35fr .95fr .95fr .85fr .8fr}
+.fr.dep{grid-template-columns:0.95fr 28px 52px 1.15fr 1.35fr .95fr .8fr .8fr}
+.fr.dep-simple{grid-template-columns:0.95fr 28px 52px 1.15fr 1.35fr .95fr .85fr .8fr}
 /* OP column cell: holds the operator brand pill (NJ/FX/BA/etc), centered, no overflow.
    Empty cells render as a clean gap rather than collapsing the column. */
 .fr > .fop{display:flex;align-items:center;justify-content:center;overflow:visible}
@@ -104,7 +104,7 @@ body{font-family:var(--sans);background:var(--b0);color:var(--t1);min-height:100
 .fr.dep-ground{background:rgba(220,38,38,.02);border-color:rgba(220,38,38,.1)}
 .fr.dep-gone{background:rgba(220,38,38,.04);border-color:rgba(220,38,38,.12)}
 .chk{width:16px;height:16px;accent-color:var(--green);cursor:pointer;margin:0 auto;display:block}
-.fi{font-family:var(--mono);font-weight:800;font-size:17px;color:var(--cyan);line-height:1.15;position:relative;padding-left:8px;min-width:0;overflow:hidden;text-overflow:clip;display:flex;flex-wrap:wrap;align-items:baseline;column-gap:4px;row-gap:2px}
+.fi{font-family:var(--mono);font-weight:800;font-size:17px;color:var(--cyan);line-height:1.15;position:relative;padding-left:8px;min-width:0;overflow:visible;text-overflow:clip;display:flex;flex-wrap:wrap;align-items:baseline;column-gap:4px;row-gap:2px}
 .fi>*{flex-shrink:0}
 
 .spot-dd{z-index:10000;background:var(--b1);border:1px solid var(--bd);border-radius:4px;box-shadow:0 4px 12px rgba(0,0,0,.3);padding:4px 0;overflow-y:auto;min-width:140px}
@@ -210,9 +210,11 @@ body{display:flex;flex-direction:column;min-height:100vh}
   overflow:visible;
 }
 .boards > .board:first-child .fi{
-  overflow:hidden;
-  text-overflow:ellipsis;
+  overflow:visible;
+  text-overflow:clip;
+  white-space:normal;
 }
+.fi{overflow:visible!important;text-overflow:clip;word-break:break-all;}
 
 @media (max-width: 1400px){
   .map-row{height:240px;min-height:200px}
@@ -418,8 +420,8 @@ body{display:flex;flex-direction:column;min-height:100vh}
 </head>
 <body>
 <div class="topbar">
-<div class="tb-l"><div class="brand"><div class="brand-i">S</div><span class="brand-n">Skyway</span></div><div class="sep"></div><span style="font-family:var(--sans);font-size:15px;font-weight:700;color:rgba(255,255,255,.65);letter-spacing:3px;text-transform:uppercase">KSFO General Aviation</span><div class="sep"></div><span class="clk" id="ck">--:--:--</span><span class="ga">GA ONLY</span></div>
-<div class="tb-c"><span class="apt" id="ac">KSFO</span><span class="apn" id="an">San Francisco Intl</span></div>
+<div class="tb-l"><div class="brand"><div class="brand-i">S</div><span class="brand-n">Skyway</span></div><div class="sep"></div><span class="clk" id="ck">--:--:--</span></div>
+<div class="tb-c"><span class="apt" id="ac">KSFO</span><span class="apn" id="an">San Francisco Intl · GA</span></div>
 <div class="tb-r"><div class="pill live" id="pill"><div class="dot"></div><span id="pt">CONNECTING</span></div><div class="sep"></div><div class="fd on" id="fo"><div class="d"></div>OPENSKY</div><div class="fd on" id="fswim" title="FAA SWIM SCDS — free event feed"><div class="d"></div>SWIM</div><div class="fd off" id="fadbPill" style="display:none" title="AeroDataBox — optional, budget-capped supplemental source"><div class="d"></div>ADB</div><div class="sep"></div><div class="fd on" id="fcr" style="cursor:pointer" onclick="showCreditDetails()" title="Click for OpenSky credit details"><div class="d"></div><span id="fcrVal">—</span></div><div class="sep" id="adbSep" style="display:none"></div><div class="fd on" id="fadb" style="display:none;cursor:pointer" onclick="showAdbDetails()" title="Click for AeroDataBox usage details"><div class="d"></div><span id="fadbVal">—</span></div><div class="sep"></div><div class="fd on" id="fidle" style="display:none" title="No browser tabs connected — background polling is paused to save API budget"><div class="d"></div>PAUSED</div><div class="sep"></div><button class="ib" onclick="doRefresh()">⟳</button><button class="ib" onclick="doCenter()">⊕</button></div>
 </div>
 <div class="map-row" id="mapRow">
@@ -2183,7 +2185,7 @@ function mkRow(f,cls,done){
   var idKey=(f.ident||'').toUpperCase();
   if(idKey&&cls==='ar'&&!done&&!f._landed){
     var wasOnGround=window._lastGroundState[idKey];
-    var isOnGroundNow=!hasDep;
+    var isOnGroundNow=!!(f.arrived||f._landed||f.onGround||(typeof f.alt==='number'&&f.alt<=0));
     // First time we see them: just record state, don't flash
     if(wasOnGround===true&&isOnGroundNow===false){
       // TRANSITION: ground -> airborne. Flag for 60s flash
@@ -2202,8 +2204,9 @@ function mkRow(f,cls,done){
     }
   }
 
-  // Add "on ground" for arrivals not yet airborne
-  if(cls==='ar'&&!done&&!f._landed&&!hasDep){
+  // "on ground" only when actually on the field (landed or ADS-B reports ground) — not merely missing departISO
+  var reallyOnGround=!!(f.arrived||f._landed||f.onGround||(typeof f.alt==='number'&&f.alt<=0&&!f.adsbProgress));
+  if(cls==='ar'&&!done&&reallyOnGround){
     etaStr+='<br><span style="font-size:7px;color:var(--t3);font-weight:600;letter-spacing:.3px">on ground</span>';
   }
 
@@ -2796,9 +2799,11 @@ function renderCreditHUD(){
     pillEl.style.background='';
     // Pick class based on auth tier + usage
     if(s.authMode==='anonymous'){
+      // Soft ops hint — not a scary "empty budget". OpenSky OAuth failed → free 400/day tier.
       pillEl.className='fd off';
-      pillEl.style.color='#f59e0b';
-      pillEl.title='ANONYMOUS tier - only 400 credits/day. Check server logs.';
+      pillEl.style.color='#94a3b8';
+      valEl.textContent='OSKY anon';
+      pillEl.title='OpenSky anonymous tier (400 credits/day). OAuth token failed — boards use adsb.lol; this gauge is OpenSky /states budget, not aircraft type.';
     } else if(pct>=0.8){
       pillEl.className='fd off';
       pillEl.style.color='#ef4444';
