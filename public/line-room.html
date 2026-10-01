@@ -178,6 +178,73 @@ img.emoji{height:1em;width:1em;margin:0 .05em 0 .1em;vertical-align:-0.1em;displ
   #shift-overlay button{display:none!important}
   @page{margin:0.5in;size:letter}
 }
+
+/* ARRIVALS-FIRST RESPONSIVE
+   Priority when the viewport shrinks: arrivals board stays fully readable (never clip columns).
+   Map + forecast shrink first, then stack below the boards. */
+body{display:flex;flex-direction:column;min-height:100vh}
+.topbar{order:0;flex-shrink:0}
+.boards{order:1}
+.done-boards{order:2}
+.resize-bar{order:3}
+.map-row{order:4;flex-shrink:0}
+/* Overlays stay out of flex flow */
+#heli-overlay,#gnd-overlay,#shift-overlay,#tail-lookup-modal,#cesium-overlay,#ramp-overlay{order:99}
+
+/* Never clip arrivals columns — allow horizontal scroll on the arrivals board instead */
+.boards > .board:first-child,
+.done-boards > .board:first-child{
+  min-width:0;
+  overflow-x:auto;
+  -webkit-overflow-scrolling:touch;
+}
+.boards > .board:first-child .cols.ca,
+.boards > .board:first-child .fr.ar,
+.boards > .board:first-child .fr.arr-active,
+.done-boards > .board:first-child .cols.ca-done,
+.done-boards > .board:first-child .fr.arr-done{
+  min-width:680px;
+}
+.boards > .board:first-child .fr > *,
+.done-boards > .board:first-child .fr > *{
+  overflow:visible;
+}
+.boards > .board:first-child .fi{
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+@media (max-width: 1400px){
+  .map-row{height:240px;min-height:200px}
+  .chart-area{min-width:160px}
+}
+@media (max-width: 1200px){
+  /* Stack map/forecast below boards; shrink map so arrivals stay above the fold */
+  .map-row{order:5;height:200px;min-height:180px;margin:8px 12px}
+  .boards{order:1}
+  .done-boards{order:2}
+  .resize-bar{order:3;display:none} /* map already below — grip unused */
+  .map-row{flex-direction:row}
+}
+@media (max-width: 900px){
+  .map-row{flex-direction:column;height:auto;min-height:auto}
+  #map{height:180px;min-height:160px;width:100%!important}
+  .chart-area{width:100%;min-width:0;min-height:120px}
+  /* Arrivals full-width on top; departures below */
+  .boards{grid-template-columns:1fr;gap:2px}
+  .boards > .board:first-child{order:1}
+  .boards > .board:last-child{order:2}
+  .board:first-child{border-right:none}
+  .boards > .board:first-child .cols.ca,
+  .boards > .board:first-child .fr.ar,
+  .boards > .board:first-child .fr.arr-active{min-width:560px}
+}
+@media (max-width: 700px){
+  #map{height:150px;min-height:140px}
+  .chart-area{min-height:100px}
+  .map-row{margin:6px}
+}
+
 /* RESPONSIVE — header wraps early; map+forecast and arr/dep stay side-by-side until phone */
 @media (max-width: 1100px){
   .topbar{padding:8px 12px;gap:6px}
@@ -191,8 +258,8 @@ img.emoji{height:1em;width:1em;margin:0 .05em 0 .1em;vertical-align:-0.1em;displ
   .apn{font-size:11px}
   .fd{font-size:9px;padding:2px 6px}
   .ib{width:28px;height:28px;font-size:12px}
-  .map-row{height:280px;min-height:260px}
-  .chart-area{min-width:180px}
+  .map-row{height:180px;min-height:160px}
+  .chart-area{min-width:140px}
 }
 @media (max-width: 900px){
   .tb-c{order:2;width:100%;justify-content:center;border-top:1px solid rgba(255,255,255,.08);padding-top:6px;margin-top:4px}
@@ -423,8 +490,8 @@ body{background:#0b0e14}
 </div>
 <div class="resize-bar" id="resizeBar"><div class="resize-grip"></div></div>
 <div class="boards">
-<div class="board"><div class="bh"><div class="bt ar" id="arrTitle">🛬 En Route / Scheduled to SFO</div><span class="bc" id="anc">0</span></div><div class="cols ca"><span>Ident</span><span></span><span></span><span>Type</span><span>From</span><span>Depart</span><span>Arrive</span><span>ETA</span><span>Spot</span><span>PAX</span></div><div class="bb" id="ab"></div></div>
-<div class="board"><div class="bh"><div class="bt de" id="depTitle">🛫 Scheduled Departures</div><span class="bc" id="dnc">0</span></div><div class="cols cd"><span>Ident</span><span></span><span></span><span>Type</span><span>To</span><span>Depart</span><span>ETD</span><span>Spot</span></div><div class="bb" id="db"></div></div>
+<div class="board"><div class="bh"><div class="bt ar" id="arrTitle">🛬 Scheduled arrivals — next 8 hours</div><span class="bc" id="anc">0</span></div><div class="cols ca"><span>Ident</span><span></span><span></span><span>Type</span><span>From</span><span>Depart</span><span>Arrive</span><span>ETA</span><span>Spot</span><span>PAX</span></div><div class="bb" id="ab"></div></div>
+<div class="board"><div class="bh"><div class="bt de" id="depTitle">🛫 Scheduled departures — next 8 hours</div><span class="bc" id="dnc">0</span></div><div class="cols cd"><span>Ident</span><span></span><span></span><span>Type</span><span>To</span><span>Depart</span><span>ETD</span><span>Spot</span></div><div class="bb" id="db"></div></div>
 </div>
 <div class="boards done-boards">
 <div class="board"><div class="bh done-hdr" id="ah" style="display:none"><div class="bt ar" style="opacity:.5">✓ Arrived</div><span class="bc" id="adc">0</span></div><div class="cols ca-done" id="ahcols" style="display:none"><span>Ident</span><span></span><span></span><span>Type</span><span>From</span><span>Depart</span><span>Arrive</span><span>Time</span><span>Spot</span></div><div class="bb" id="adb" style="display:none"></div></div>
@@ -2265,16 +2332,25 @@ function updateBoardTitles(mode){
   var at=document.getElementById('arrTitle');
   var dt=document.getElementById('depTitle');
   if(!at||!dt)return;
+  // Always label the schedule boards as the next-8-hours window (even in ADS-B-live mode
+  // the SWIM/OpenSky schedule rows share this board).
+  at.textContent='🛬 Scheduled arrivals — next 8 hours';
+  dt.textContent='🛫 Scheduled departures — next 8 hours';
   if(mode==='adsb-live'){
-    at.textContent='🛬 Live inbound near SFO (ADS-B)';
-    dt.textContent='🛫 Live outbound near SFO (ADS-B)';
-    at.title='GA/bizjet positions from adsb.lol — not filed schedules. FROM/TO need SWIM or OpenSky.';
-    dt.title='GA/bizjet climbing away from KSFO — not filed schedules.';
+    at.title='Scheduled GA/bizjet arrivals in the next 8 hours (plus landed <5m). Live ADS-B fills gaps when SWIM is quiet.';
+    dt.title='Scheduled GA/bizjet departures in the next 8 hours. Live ADS-B fills gaps when SWIM is quiet.';
   } else {
-    at.textContent='🛬 En Route / Scheduled to SFO';
-    dt.textContent='🛫 Scheduled Departures';
-    at.title='';dt.title='';
+    at.title='Filed/estimated arrivals within the next 8 hours. Landed flights drop after 5 minutes.';
+    dt.title='Filed/estimated departures within the next 8 hours.';
   }
+}
+var BOARD_WINDOW_MS=8*60*60*1000;
+function inNext8h(iso,now){
+  if(!iso)return null; // unknown — caller decides
+  var t=new Date(iso).getTime();
+  if(!t||isNaN(t))return null;
+  var d=t-now;
+  return d<=BOARD_WINDOW_MS;
 }
 function fetchBoards(){
   console.log('[BOARDS] Fetching arrivals...');
@@ -2300,14 +2376,18 @@ function fetchBoards(){
       if(f.source==='adsb-inbound'||f.source==='adsb'){active.push(f);continue;}
       var arrTime=f.arriveISO?new Date(f.arriveISO).getTime():0;
       var minsSinceArr=arrTime>0?Math.round((now-arrTime)/60000):-999;
-      if(f.arrived||minsSinceArr>5){
+      // Landed aircraft stay on the active board for 5 minutes only, then drop entirely
+      // (no long-lived ✓ Arrived list — ramp already saw them; On Ground HUD still has history).
+      if(f.arrived||minsSinceArr>=0){
         if(minsSinceArr>=0&&minsSinceArr<5){f._landed=true;active.push(f);}
-        else completed.push(f);
+        // else: drop after 5 minutes
+        continue;
       }
-      else if(minsSinceArr>=0&&minsSinceArr<=5){
-        f._landed=true;active.push(f);
-      }
-      else active.push(f);
+      // Scheduled window: only show arrivals with ETA in the next 8 hours (keep if no time).
+      var win=inNext8h(f.arriveISO,now);
+      if(win===false)continue;
+      if(arrTime>0&&arrTime-now>BOARD_WINDOW_MS)continue;
+      active.push(f);
     }
     // Sort active: soonest arrival first
     active.sort(function(a,b){return(a.arriveISO||'').localeCompare(b.arriveISO||'');});
@@ -2333,10 +2413,24 @@ function fetchBoards(){
     var ddb=document.getElementById('ddb');
     var dh=document.getElementById('dh');
     var active=[],completed=[];
+    var nowDep=Date.now();
     if(dep)for(var i=0;i<dep.length;i++){
       var f=dep[i];
-      if(f.departed)completed.push(f);
-      else active.push(f);
+      if(f.departed){
+        // Keep recently departed briefly on the completed strip (5 min), then drop.
+        var depMs=f.departISO?new Date(f.departISO).getTime():0;
+        if(depMs>0&&(nowDep-depMs)<5*60000)completed.push(f);
+        continue;
+      }
+      // Scheduled window: next 8 hours when a depart time exists.
+      var winD=inNext8h(f.departISO,nowDep);
+      if(winD===false)continue;
+      // Also drop already-past ETD that aren't marked departed (stale schedule).
+      if(f.departISO){
+        var dms=new Date(f.departISO).getTime();
+        if(dms&&dms<nowDep-5*60000)continue; // more than 5m past ETD → drop
+      }
+      active.push(f);
     }
     // Sort active: soonest departure first
     active.sort(function(a,b){return(a.departISO||'').localeCompare(b.departISO||'');});

@@ -1109,6 +1109,32 @@ async function pollAdsbInboundBoard() {
 
 
 var groundCache = {}; // accumulated from arrivals marked arrived, same idea as v249
+
+const LANDED_KEEP_MS = 5 * 60 * 1000; // show landed arrivals for 5 minutes, then drop from board
+function pruneLandedArrivals() {
+  var now = Date.now();
+  var dropped = 0;
+  movements.arrivals.forEach(function (f, key) {
+    if (!f) return;
+    var arrMs = f.arriveISO ? new Date(f.arriveISO).getTime() : 0;
+    var landed = !!f.arrived || (arrMs > 0 && arrMs <= now);
+    if (!landed) return;
+    if (!arrMs) return;
+    if ((now - arrMs) < LANDED_KEEP_MS) return;
+    // Preserve for On Ground HUD before dropping from the live arrivals board.
+    if (f.ident) {
+      groundCache[key] = {
+        ident: f.ident, callsign: f.callsign, type: f.type, from: f.from,
+        city: f.city, country: f.country, intl: f.intl,
+        arrivedTime: f.arrive, arrivedISO: f.arriveISO, departISO: f.departISO
+      };
+    }
+    movements.arrivals.delete(key);
+    dropped++;
+  });
+  return dropped > 0;
+}
+
 function pruneAndAccumulateGround() {
   movements.arrivals.forEach(function (f, key) {
     if (f.arrived && f.ident) groundCache[key] = { ident: f.ident, callsign: f.callsign, type: f.type, from: f.from, arrivedTime: f.arrive, arrivedISO: f.arriveISO, departISO: f.departISO };
@@ -1183,6 +1209,7 @@ async function buildBoard(kind) {
   var rampById = {}; rampAll.forEach(function (r) { rampById[r.id] = r; });
   var entries = Array.from(m.values());
   pruneDivertedMovements();
+  if (kind === 'arrivals') pruneLandedArrivals();
   entries = Array.from(m.values());
   for (var i = 0; i < entries.length; i++) {
     var f = Object.assign({}, entries[i]);
@@ -1357,6 +1384,7 @@ setInterval(pollAdsbInboundBoard, 45000);
 setInterval(() => broadcast({ type: 'status', data: buildStatusPayload() }), 15000);
 setInterval(pruneAndAccumulateGround, 60000);
 setInterval(function () { if (pruneDivertedMovements()) broadcast({ type: 'board' }); }, 60000);
+setInterval(function () { if (pruneLandedArrivals()) broadcast({ type: 'board' }); }, 30000);
 
 async function main() {
   await initSchema();
