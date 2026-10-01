@@ -577,6 +577,30 @@ async function handleAdsbStates(query, res) {
 }
 
 // ============================================================================================
+// ============================================================================================
+// GA / BIZJET BOARD FILTER — Signature FBO: keep fractional, N-reg GA, light/mid biz + piston/
+// turboprop types; drop airline callsigns (UAL/AAL/...) and airliner/heavy ICAO types.
+// Applied to ADS-B, SWIM/TFMS, and OpenSky /flights so boards stay GA/biz-heavy.
+// ============================================================================================
+var AIRLINE_CS = new Set(('UAL AAL DAL SWA ASA JBU NKS FFT SKW EDV RPA ASH ENY QXE HAL CPA BAW AFR DLH UAE CSG CCA CES CSN CHH CES FDX UPS GTI ATN ABX GTI VRD SCX WOA UAL CKS MPO').split(/\s+/));
+var FRAC_CS = /^(EJA|EJM|LXJ|TWY|JTL|XOJ|OPT|JRE|GTT|DPJ|VJT|GAJ|HRT|TIV|LNJ|CVC)/;
+function isGaBizTraffic(flight, reg, typeCode) {
+  var cs = String(flight || '').trim().toUpperCase();
+  var r = String(reg || '').trim().toUpperCase();
+  var t = String(typeCode || '').trim().toUpperCase();
+  // Airliners / heavies are never Signature FBO board traffic even on N-reg.
+  if (/^(A318|A319|A320|A321|A19N|A20N|A21N|A332|A333|A339|A359|A35K|A388|B71|B72|B73|B74|B75|B76|B77|B78|B37M|B38M|B39M|CRJ|E17|E19|E75|E29|BCS|MD8|MD9|DH8)/.test(t)) return false;
+  if (cs && AIRLINE_CS.has(cs.substring(0, 3))) return false;
+  if (FRAC_CS.test(cs)) return true;
+  if (r.charAt(0) === 'N' && r.length > 1 && r.charAt(1) >= '0' && r.charAt(1) <= '9') {
+    if (/^[A-Z]{3}\d/.test(cs) && AIRLINE_CS.has(cs.substring(0, 3))) return false;
+    // N-reg with empty/own callsign — GA/biz default OK unless type is airliner (handled above)
+    return true;
+  }
+  if (/^(C25|C25A|C25B|C25C|C500|C510|C525|C550|C560|C56X|C680|C68A|C700|C750|CL30|CL35|CL60|GLF|GLEX|GA[45678]C|LJ|EA50|E50P|E55P|PC12|PC24|TBM|BE20|B350|BE9L|C172|C182|C206|C208|C210|P28|PA46|SR2|DA4|DA6|H25|FA5|FA7|FA8|F2TH|HDJT|SF50)/.test(t)) return true;
+  return false;
+}
+
 // FAA SWIM SCDS — the primary free enrichment source now that FlightAware is gone. Ported from
 // v249's scaffolding (it parsed FIXM messages correctly but nothing consumed the output — the
 // client never even connected). v250 turns this ON by default (creds are required to boot) and
@@ -740,6 +764,10 @@ function ingestSwimFlightBlock(block) {
   var touchesHome = airportMatch(orig, AIRPORT_ICAO) || airportMatch(dest, AIRPORT_ICAO);
   if (!touchesHome) return false;
 
+  // Signature FBO board: GA / fractional / bizjet only — drop airline callsigns and airliner types
+  // from SWIM/TFMS the same way ADS-B inbound already filters.
+  if (!isGaBizTraffic(cs || '', tail || '', acType || '')) return false;
+
   var key = (tail || cs).toUpperCase().replace(/[^A-Z0-9]/g, '');
   var ident = tail || cs;
   var nowISO = new Date().toISOString();
@@ -850,11 +878,15 @@ async function pollOpenSkyFlights() {
   var dep = await oskyFlightsCall('/flights/departure?airport=' + AIRPORT_ICAO + '&begin=' + begin + '&end=' + end);
   if (Array.isArray(arr)) {
     arr.forEach(function (f) {
-      var key = (f.callsign || f.icao24 || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+      var cs = (f.callsign || '').trim();
+      var key = (cs || f.icao24 || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
       if (!key) return;
+      // OpenSky /flights often puts N-number in callsign; treat that as reg for GA filter.
+      var regGuess = /^N[0-9]/i.test(cs) ? cs.replace(/\s+/g, '') : '';
+      if (!isGaBizTraffic(cs, regGuess, '')) return;
       var arriveISO = f.lastSeen ? new Date(f.lastSeen * 1000).toISOString() : '';
       upsertMovement('arrivals', key, {
-        ident: (f.callsign || f.icao24 || '').trim(), callsign: (f.callsign || '').trim(),
+        ident: (cs || f.icao24 || '').trim(), callsign: cs,
         from: (f.estDepartureAirport || '').trim(), arriveISO: arriveISO, arrive: fmtTimeLA(arriveISO),
         arrived: !!f.lastSeen, source: 'opensky-flights'
       });
@@ -862,11 +894,14 @@ async function pollOpenSkyFlights() {
   }
   if (Array.isArray(dep)) {
     dep.forEach(function (f) {
-      var key = (f.callsign || f.icao24 || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+      var cs = (f.callsign || '').trim();
+      var key = (cs || f.icao24 || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
       if (!key) return;
+      var regGuess = /^N[0-9]/i.test(cs) ? cs.replace(/\s+/g, '') : '';
+      if (!isGaBizTraffic(cs, regGuess, '')) return;
       var departISO = f.firstSeen ? new Date(f.firstSeen * 1000).toISOString() : '';
       upsertMovement('departures', key, {
-        ident: (f.callsign || f.icao24 || '').trim(), callsign: (f.callsign || '').trim(),
+        ident: (cs || f.icao24 || '').trim(), callsign: cs,
         to: (f.estArrivalAirport || '').trim(), departISO: departISO, depart: fmtTimeLA(departISO),
         departed: !!f.firstSeen, source: 'opensky-flights'
       });
@@ -882,8 +917,6 @@ async function pollOpenSkyFlights() {
 // ============================================================================================
 var ADSB_BOARD_RADIUS_NM = parseInt(process.env.ADSB_BOARD_RADIUS_NM || '50', 10);
 var SFO_LAT = 37.6213, SFO_LON = -122.3790;
-var AIRLINE_CS = new Set(('UAL AAL DAL SWA ASA JBU NKS FFT SKW EDV RPA ASH ENY QXE HAL CPA BAW AFR DLH UAE CSG CCA CES CSN CHH CES FDX UPS GTI ATN ABX GTI VRD SCX WOA UAL CKS MPO').split(/\s+/));
-var FRAC_CS = /^(EJA|EJM|LXJ|TWY|JTL|XOJ|OPT|JRE|GTT|DPJ|VJT|GAJ|HRT|TIV|LNJ|CVC)/;
 function nmDist(lat1, lon1, lat2, lon2) {
   var dLat = (lat2 - lat1) * 60;
   var mid = ((lat1 + lat2) / 2) * Math.PI / 180;
@@ -900,22 +933,6 @@ function bearingDeg(lat1, lon1, lat2, lon2) {
 function angleDiffDeg(a, b) {
   var d = Math.abs(a - b) % 360;
   return d > 180 ? 360 - d : d;
-}
-function isGaBizTraffic(flight, reg, typeCode) {
-  var cs = String(flight || '').trim().toUpperCase();
-  var r = String(reg || '').trim().toUpperCase();
-  var t = String(typeCode || '').trim().toUpperCase();
-  // Airliners / heavies are never Signature FBO board traffic even on N-reg.
-  if (/^(A318|A319|A320|A321|A19N|A20N|A21N|A332|A333|A339|A359|A35K|A388|B71|B72|B73|B74|B75|B76|B77|B78|B37M|B38M|B39M|CRJ|E17|E19|E75|E29|BCS|MD8|MD9|DH8)/.test(t)) return false;
-  if (cs && AIRLINE_CS.has(cs.substring(0, 3))) return false;
-  if (FRAC_CS.test(cs)) return true;
-  if (r.charAt(0) === 'N' && r.length > 1 && r.charAt(1) >= '0' && r.charAt(1) <= '9') {
-    if (/^[A-Z]{3}\d/.test(cs) && AIRLINE_CS.has(cs.substring(0, 3))) return false;
-    // N-reg with empty/own callsign — GA/biz default OK unless type is airliner (handled above)
-    return true;
-  }
-  if (/^(C25|C25A|C25B|C25C|C500|C510|C525|C550|C560|C56X|C680|C68A|C700|C750|CL30|CL35|CL60|GLF|GLEX|GA[45678]C|LJ|EA50|E50P|E55P|PC12|PC24|TBM|BE20|B350|BE9L|C172|C182|C206|C208|C210|P28|PA46|SR2|DA4|DA6|H25|FA5|FA7|FA8|F2TH|HDJT|SF50)/.test(t)) return true;
-  return false;
 }
 function estimateEtaMin(distNm, gs, track, brgToField) {
   var speed = (typeof gs === 'number' && gs > 40) ? gs : 120;
@@ -1059,6 +1076,10 @@ async function buildBoard(kind) {
   var entries = Array.from(m.values());
   for (var i = 0; i < entries.length; i++) {
     var f = Object.assign({}, entries[i]);
+    // Safety net: never surface airline/airliner rows on Signature boards regardless of source.
+    var boardCs = f.callsign || '';
+    var boardReg = f.ident || '';
+    if (!isGaBizTraffic(boardCs, boardReg, f.type || '')) continue;
     if (ADB_ENABLED && !isIdle()) f = await adbEnrichIfGap(f);
     var key = (f.ident || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     var ramp = rampById[key];
