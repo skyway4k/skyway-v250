@@ -52,7 +52,7 @@ body{font-family:var(--sans);background:var(--b0);color:var(--t1);min-height:100
 .leaflet-container{overflow:hidden!important;position:relative!important;contain:layout paint}
 .leaflet-pane,.leaflet-marker-pane,.leaflet-overlay-pane{contain:layout style}
 .chart-area{flex:1.15;min-width:220px;border-radius:10px;border:1px solid var(--bd);background:var(--b1);padding:12px 14px;display:flex;flex-direction:column;box-shadow:0 1px 3px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.02)}
-.leaflet-tile-pane{filter:saturate(1.15) hue-rotate(195deg) brightness(.92) contrast(1.06) sepia(.12)}
+.leaflet-tile-pane{filter:saturate(1.05) brightness(.96) contrast(1.04)}
 .leaflet-control-zoom a{background:var(--b1)!important;color:var(--t1)!important;border-color:var(--bd)!important;font-weight:700!important}
 .leaflet-control-attribution{display:none!important}
 .ac-tip{background:rgba(255,255,255,.92)!important;border:1px solid rgba(0,0,0,.08)!important;border-radius:4px!important;padding:2px 5px!important;font-family:'JetBrains Mono',monospace!important;font-size:9px!important;font-weight:700!important;color:#111827!important;box-shadow:0 1px 4px rgba(0,0,0,.08)!important;white-space:nowrap!important}
@@ -1341,32 +1341,23 @@ function initMap(){
       io.observe(mapEl);
     }catch(e){}
   }
-  // Dark aviation-style tile strategy — modeled on FlightAware's look.
-  // Order: CARTO dark (bluescale via CSS filter), Voyager, Positron, ESRI light gray, OSM last.
-  // Prefer cool blue/cyan basemaps; warm ESRI Dark Gray removed. Degrades if CARTO is blocked.
+  // Free no-key basemap strategy (v251) — CARTO/Mapbox/Google removed (CARTO now serves
+  // "API KEY REQUIRED" watermark tiles). Prefer clear land/water/coast for Bay Area bullseyes.
+  // Order: ESRI World Ocean (water + coastline), ESRI Light Gray Canvas, OSM standard last.
+  // All three work indefinitely without API keys.
   //
   // Robustness model (rebuilt v232 to fix recurrent "land layer drops out" bug):
-  //   1. Each provider gets 10s to load its FIRST tile before we consider it failed.
-  //      Was 6s, which raced with the actual network — providers that took 7s to wake up
-  //      were getting swapped out the moment they were about to succeed, leaving us in
-  //      "transitioning" state with no working tile layer.
-  //   2. Errors only trigger a swap if we get >=8 errors AND <2 successful loads in 15s.
-  //      Was 5/0 within unbounded time — transient CDN hiccups (e.g. one 503 every 30s)
-  //      slowly accumulated past the threshold and triggered a swap of a healthy provider.
+  //   1. Each provider gets 20s to load its FIRST tile before we consider it failed.
+  //   2. Errors only trigger a swap if we get >=10 errors AND 0 successful loads in 20s.
   //   3. When all providers fail, we wrap-around back to index 0 after a 30s cooldown.
-  //      Was a hard return — if all 4 providers had a transient failure window, the map
-  //      would PERMANENTLY have no tiles even after the network came back.
-  //   4. The periodic health check now confirms "no tiles" across 2 consecutive 5s checks
-  //      before nudging redraw, so it doesn't race during normal pan/zoom transitions.
+  //   4. The periodic health check redraws the current layer; never auto-swaps once locked.
   var tileProviders=[
-    {name:'CARTO-Dark',url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',sub:'abcd',theme:'dark'},
-    {name:'CARTO-Voyager',url:'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',sub:'abcd',theme:'light'},
-    {name:'CARTO-Positron',url:'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',sub:'abcd',theme:'light'},
-    {name:'ESRI-LightGray',url:'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',sub:null,theme:'light'},
-    {name:'OSM',url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',sub:null,theme:'light'}
+    {name:'ESRI-WorldOcean',url:'https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}',sub:null,theme:'dark',maxNativeZoom:16},
+    {name:'ESRI-LightGray',url:'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',sub:null,theme:'light',maxNativeZoom:16},
+    {name:'OSM',url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',sub:null,theme:'light',maxNativeZoom:19}
   ];
-  window._darkTileUrl='https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
-  window._lightTileUrl='https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
+  window._darkTileUrl='https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}';
+  window._lightTileUrl='https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}';
   // Blue-dark tile substitute — fills a failed cell with a cool navy instead of a void.
   var DARK_ERROR_TILE='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
   var currentProviderIdx=0;
@@ -1395,7 +1386,7 @@ function initMap(){
     }
     if(window._updateMapThemeElements)window._updateMapThemeElements(p.theme);
     var opts={
-      maxZoom:19,maxNativeZoom:19,minZoom:2,tileSize:256,
+      maxZoom:19,maxNativeZoom:(p.maxNativeZoom||16),minZoom:2,tileSize:256,
       attribution:'',crossOrigin:'anonymous',keepBuffer:4,updateWhenIdle:false,
       errorTileUrl:DARK_ERROR_TILE
     };
