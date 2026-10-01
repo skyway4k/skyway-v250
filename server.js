@@ -121,6 +121,15 @@ async function initSchema() {
       units INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (source, period_key)
     );
+    CREATE TABLE IF NOT EXISTS faa_registry_cache (
+      n_number TEXT PRIMARY KEY,
+      icao_type TEXT,
+      model TEXT,
+      make TEXT,
+      raw_model TEXT,
+      ok BOOLEAN NOT NULL DEFAULT false,
+      fetched_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
   `);
   log('Postgres schema ready', 'OK');
 }
@@ -701,10 +710,36 @@ function linkIdents() {
   identAliases.set(canon, canon);
   return canon;
 }
+function normalizeIcaoType(raw) {
+  if (!raw) return '';
+  var t = String(raw).trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  // Reject ADS-B emitter kinds / junk that sometimes leak into type fields
+  if (!t || t === 'ADSBICAO' || t === 'ADSRICAO' || t === 'MLAT' || t === 'OTHER' || t === 'MODE_S') return '';
+  if (t.length < 2 || t.length > 6) return '';
+  return t;
+}
+// Infer N-number for common fractional callsigns when TFMS omits registration.
+// Conservative: only patterns that match live ADS-B (EJA###→N###QS, LXJ###→N###FX).
+function inferFracNReg(cs) {
+  var c = normIdent(cs);
+  var m = c.match(/^(EJA|LXJ)(\d{1,4})([A-Z]?)$/);
+  if (!m) return '';
+  var digits = m[2];
+  if (m[1] === 'EJA') return 'N' + digits + 'QS';
+  if (m[1] === 'LXJ') return 'N' + digits + 'FX';
+  return '';
+}
 function fracHeuristicLinks(reg, cs) {
   // Common fractional patterns: N680QS↔EJA680, N450FX↔LXJ450, N17TW↔TWY17 (loose digit match).
   var r = normIdent(reg), c = normIdent(cs);
-  if (!r || !c) return;
+  if (!r || !c) {
+    // Soft-link inferred N-reg for fractional callsigns even before ADS-B sees the tail
+    if (c && !r) {
+      var inferred = inferFracNReg(c);
+      if (inferred) linkIdents(inferred, c);
+    }
+    return;
+  }
   var cm = c.match(/^(EJA|EJM|LXJ|TWY|JTL|XOJ|OPT|JRE|GTT|DPJ|VJT|GAJ|HRT|TIV|LNJ|CVC)(\d+[A-Z]?)$/);
   var rm = r.match(/^N(\d+)([A-Z]{0,3})$/);
   if (cm && rm) {
@@ -1001,8 +1036,16 @@ function ingestSwimFlightBlock(block, feedLabel) {
   var cs = xmlAttr(block, 'acid') || xval(block, 'aircraftId', 'aircraftIdentification', 'callSign', 'callsign', 'flightIdentification');
   var orig = xmlAttr(block, 'depArpt') || xval(block, 'departurePoint[\\s\\S]*?airport', 'departureAirport', 'departureAerodrome.*?locationIndicator', 'originAirport', 'departureAerodrome', 'dep');
   var dest = xmlAttr(block, 'arrArpt') || xval(block, 'arrivalPoint[\\s\\S]*?airport', 'arrivalAirport', 'destinationAerodrome.*?locationIndicator', 'destinationAirport', 'destinationAerodrome', 'arr');
-  var acType = xval(block, 'aircraftType', 'typeDesignator', 'aircraftSpecification', 'icaoAircraftType') || xmlAttr(block, 'aircraftType');
+  var acType = normalizeIcaoType(
+    xval(block, 'aircraftSpecification', 'aircraftType', 'typeDesignator', 'icaoAircraftType') ||
+    xmlAttr(block, 'aircraftSpecification') || xmlAttr(block, 'aircraftType') || xmlAttr(block, 'acType') || xmlAttr(block, 'equipment')
+  );
   var tail = xval(block, 'registration', 'aircraftRegistration', 'tailNumber', 'aircraftRegistrationMark');
+  // Fractional operators often omit reg in TFMS; infer common NetJets/Flexjet N-numbers for merge + FAA.
+  if (!tail && cs) {
+    var inferredTail = inferFracNReg(cs);
+    if (inferredTail) tail = inferredTail;
+  }
   var etd = parseIsoLoose(
     xmlAttr(block, 'igtd') ||
     xval(block, 'earliestRunwayDepartureTime', 'estimatedOffBlockTime', 'EOBT', 'departureDateTime', 'gateDepartureTime', 'estimatedDepartureTime', 'igtd', 'actualOffBlockTime') ||
@@ -1154,6 +1197,7 @@ function upsertMovement(board, key, patch) {
   if (!(patch && patch.reg) && existing.reg) merged.reg = existing.reg;
   if (!(patch && patch.callsign) && existing.callsign) merged.callsign = existing.callsign;
   if (!(patch && patch.type) && existing.type) merged.type = existing.type;
+  if (!(patch && patch.model) && existing.model) merged.model = existing.model;
 
   var patchIsAdsb = isAdsbBoardSource(patch && patch.source);
   var existingSwim = isSwimishSource(existing.source) || existing.timeSource === 'swim';
@@ -1538,10 +1582,8 @@ async function pollAdsbInboundBoard() {
       if (distNm > dist + 5) continue;
       var flight = (ac.flight || '').trim().toUpperCase();
       var reg = String(ac.r || ac.reg || '').trim().toUpperCase();
-      var typeCode = String(ac.t || ac.type || '').trim();
-      if (typeCode === 'adsb_icao' || typeCode === 'adsr_icao' || typeCode === 'mlat') typeCode = String(ac.t || '').trim();
-      // adsb.lol uses `t` for ICAO type; `type` is often the ADS-B emitter kind
-      typeCode = String(ac.t || '').trim();
+      // adsb.lol uses `t` for ICAO type; `type` is often the ADS-B emitter kind — never use emitter kind as aircraft type
+      var typeCode = normalizeIcaoType(ac.t);
       if (!isGaBizTraffic(flight, reg, typeCode)) continue;
       var track = (typeof ac.track === 'number') ? ac.track : (typeof ac.true_heading === 'number' ? ac.true_heading : null);
       var brgIn = bearingDeg(lat, lon, SFO_LAT, SFO_LON); // toward field
@@ -1658,8 +1700,9 @@ async function pollAdsbInboundBoard() {
       if (isSwimishSource(f.source) || f.timeSource === 'swim' || lookupTfmsPlan(key)) return;
       if (f.source === 'adsb-outbound' || f.source === 'adsb') { movements.departures.delete(key); droppedD++; }
     });
-    log('[ADSB board] seen=' + seen + ' arr=' + arrN + ' dep=' + depN + ' dropA=' + droppedA + ' dropD=' + droppedD + ' r=' + dist + 'nm', (arrN || depN) ? 'OK' : 'WARN');
-    if (arrN || depN || droppedA || droppedD) broadcast({ type: 'board' });
+    var backfilled = backfillBoardFromAdsbList(list);
+    log('[ADSB board] seen=' + seen + ' arr=' + arrN + ' dep=' + depN + ' dropA=' + droppedA + ' dropD=' + droppedD + ' backfill=' + backfilled + ' r=' + dist + 'nm', (arrN || depN || backfilled) ? 'OK' : 'WARN');
+    if (arrN || depN || droppedA || droppedD || backfilled) broadcast({ type: 'board' });
   } catch (e) {
     log('[ADSB board] ' + e.message, 'WARN');
   }
@@ -1774,6 +1817,337 @@ function enrichMovementLoc(f, kind) {
   return f;
 }
 
+
+// ============================================================================================
+// FAA AIRCRAFT REGISTRY — free N-number → make/model (+ best-effort ICAO type) with cache.
+// Official inquiry pages (no paid key). Cache by N-reg in memory + Postgres so we do not
+// hammer registry.faa.gov. ICAO type still prefers ADS-B `t` / SWIM equipment when present.
+// ============================================================================================
+var faaMemCache = new Map(); // N123AB → { icaoType, model, make, rawModel, ok, fetchedAt, pending? }
+var faaInflight = new Map();
+var faaLastFetchAt = 0;
+var FAA_MIN_INTERVAL_MS = 900;
+var FAA_POS_TTL_MS = 30 * 24 * 3600 * 1000;
+var FAA_NEG_TTL_MS = 24 * 3600 * 1000;
+var ICAO_TO_LAYMAN = {
+  C56X:'Citation Excel', C68A:'Citation Latitude', C680:'Citation Sovereign', C700:'Citation Longitude',
+  C750:'Citation X', C25A:'Citation CJ2', C25B:'Citation CJ3', C25C:'Citation CJ4', C525:'Citation CJ1',
+  C510:'Citation Mustang', C550:'Citation II', C560:'Citation V', E55P:'Phenom 300', E50P:'Phenom 100',
+  E545:'Legacy 450', E550:'Praetor 600', CL30:'Challenger 300', CL35:'Challenger 350', CL60:'Challenger 600',
+  GLF5:'Gulfstream G550', GLF4:'Gulfstream G450', GLF6:'Gulfstream G650', GL5T:'Global 5500', GL7T:'Global 7500',
+  GLEX:'Global Express', GA5C:'Gulfstream G500', GA6C:'Gulfstream G600', GA7C:'Gulfstream G700',
+  G280:'Gulfstream G280', FA7X:'Falcon 7X', FA8X:'Falcon 8X', F2TH:'Falcon 2000', HDJT:'HondaJet',
+  PC12:'PC-12', PC24:'PC-24', SF50:'Vision Jet', LJ45:'Learjet 45', LJ75:'Learjet 75',
+  BE20:'King Air 200', B350:'King Air 350', C172:'Skyhawk', C182:'Skylane', C206:'Stationair', C208:'Caravan'
+};
+var FAA_MODEL_TO_ICAO = {
+  'EMB-505': 'E55P', 'EMB505': 'E55P', 'EMB-500': 'E50P', 'EMB500': 'E50P',
+  'EMB-545': 'E545', 'EMB545': 'E545', 'EMB-550': 'E550', 'EMB550': 'E550',
+  '680A': 'C68A', '680': 'C680', '700': 'C700', '750': 'C750', '560XL': 'C56X',
+  '525C': 'C25C', '525B': 'C25B', '525A': 'C25A', '525': 'C525', '510': 'C510',
+  '500': 'C500', '550': 'C550', '560': 'C560', '650': 'C650',
+  'GV-SP': 'GLF5', 'G550': 'GLF5', 'GIV-X': 'GLF4', 'G450': 'GLF4',
+  'GVI': 'GLF6', 'G650': 'GLF6', 'G650ER': 'GLF6', 'G280': 'G280', 'G200': 'G200', 'G150': 'G150',
+  'G500': 'GA5C', 'G600': 'GA6C', 'G700': 'GA7C', 'G800': 'GA8C', 'G400': 'GA4C',
+  'BD-100-1A10': 'CL30', 'CL-600-2B16': 'CL60', 'CL-600-2B19': 'CRJ2',
+  'F2TH': 'F2TH', 'FA7X': 'FA7X', 'FA8X': 'FA8X', 'FA50': 'FA50', 'F900': 'F900',
+  'PC-12': 'PC12', 'PC-24': 'PC24', 'TBM 700': 'TBM7', 'TBM 850': 'TBM8', 'TBM 900': 'TBM9',
+  '172S': 'C172', '172R': 'C172', '182T': 'C182', '206H': 'C206', '208B': 'C208',
+  'SR20': 'SR20', 'SR22': 'SR22', 'SR22T': 'SR22', 'SF50': 'SF50',
+  'EA500': 'EA50', 'HA-420': 'HDJT', 'LJ45': 'LJ45', 'LJ75': 'LJ75', 'LJ60': 'LJ60',
+  'B300': 'B350', 'B200': 'BE20', 'C90GTx': 'BE9L', 'C90A': 'BE9L'
+};
+function faaNKey(reg) {
+  var n = normIdent(reg);
+  if (!isNRegIdent(n)) return '';
+  return n;
+}
+function faaStripN(nKey) {
+  return nKey.charAt(0) === 'N' ? nKey.slice(1) : nKey;
+}
+function faaParseDataLabel(html, label) {
+  if (!html || !label) return '';
+  var re = new RegExp('data-label="' + label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '"[^>]*>([^<]*)', 'i');
+  var m = html.match(re);
+  return m ? m[1].replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').trim() : '';
+}
+function faaIcaoFromModel(rawModel) {
+  if (!rawModel) return '';
+  var raw = String(rawModel).trim();
+  // Prefer parenthetical marketing name: "GV-SP (G550)" → try G550 then GV-SP
+  var paren = raw.match(/\(([^)]+)\)/);
+  var candidates = [];
+  if (paren) candidates.push(paren[1].trim());
+  candidates.push(raw.replace(/\s*\([^)]*\)\s*/g, ' ').trim());
+  candidates.push(raw);
+  for (var i = 0; i < candidates.length; i++) {
+    var c = candidates[i];
+    if (!c) continue;
+    var hit = FAA_MODEL_TO_ICAO[c] || FAA_MODEL_TO_ICAO[c.toUpperCase()] || FAA_MODEL_TO_ICAO[c.replace(/\s+/g, '')];
+    if (hit) return hit;
+    var compact = c.toUpperCase().replace(/[^A-Z0-9-]/g, '');
+    if (FAA_MODEL_TO_ICAO[compact]) return FAA_MODEL_TO_ICAO[compact];
+  }
+  return '';
+}
+function faaLaymanModel(make, rawModel) {
+  if (!rawModel) return '';
+  var raw = String(rawModel).trim();
+  var paren = raw.match(/\(([^)]+)\)/);
+  if (paren && paren[1].trim().length >= 2) {
+    // "GV-SP (G550)" → "G550"; "CL-600-2B16 (604 VARIANT)" keep paren only if short
+    var p = paren[1].trim();
+    if (p.length <= 24 && !/variant/i.test(p)) return p;
+  }
+  // Embraer EMB-505 → keep EMB-505 (UI MODEL map can still decorate via ICAO)
+  if (/^EMB-/i.test(raw)) return raw.toUpperCase();
+  // Cessna numeric-only model codes: prefer make prefix when short
+  if (/^\d{2,4}[A-Z]?$/i.test(raw) && make) {
+    var mk = String(make).split(/\s+/)[0];
+    if (mk && mk.length <= 12) return mk.charAt(0) + mk.slice(1).toLowerCase() + ' ' + raw;
+  }
+  return raw;
+}
+function faaCacheFresh(entry) {
+  if (!entry || !entry.fetchedAt) return false;
+  var age = Date.now() - entry.fetchedAt;
+  return entry.ok ? age < FAA_POS_TTL_MS : age < FAA_NEG_TTL_MS;
+}
+async function faaLoadFromDb(nKey) {
+  try {
+    var r = await pool.query(
+      'SELECT n_number, icao_type, model, make, raw_model, ok, fetched_at FROM faa_registry_cache WHERE n_number=$1',
+      [nKey]
+    );
+    if (!r.rows.length) return null;
+    var row = r.rows[0];
+    return {
+      icaoType: row.icao_type || '',
+      model: row.model || '',
+      make: row.make || '',
+      rawModel: row.raw_model || '',
+      ok: !!row.ok,
+      fetchedAt: row.fetched_at ? new Date(row.fetched_at).getTime() : 0
+    };
+  } catch (e) {
+    log('[FAA] cache read failed: ' + e.message, 'WARN');
+    return null;
+  }
+}
+async function faaSaveToDb(nKey, entry) {
+  try {
+    await pool.query(
+      `INSERT INTO faa_registry_cache (n_number, icao_type, model, make, raw_model, ok, fetched_at)
+       VALUES ($1,$2,$3,$4,$5,$6, to_timestamp($7/1000.0))
+       ON CONFLICT (n_number) DO UPDATE SET
+         icao_type=$2, model=$3, make=$4, raw_model=$5, ok=$6, fetched_at=to_timestamp($7/1000.0)`,
+      [nKey, entry.icaoType || null, entry.model || null, entry.make || null, entry.rawModel || null, !!entry.ok, entry.fetchedAt || Date.now()]
+    );
+  } catch (e) {
+    log('[FAA] cache write failed: ' + e.message, 'WARN');
+  }
+}
+async function faaFetchRemote(nKey) {
+  var wait = FAA_MIN_INTERVAL_MS - (Date.now() - faaLastFetchAt);
+  if (wait > 0) await new Promise(function (r) { setTimeout(r, wait); });
+  faaLastFetchAt = Date.now();
+  var url = 'https://registry.faa.gov/AircraftInquiry/Search/NNumberResult?nNumberTxt=' + encodeURIComponent(faaStripN(nKey));
+  var ctrl = AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined;
+  var res = await fetch(url, {
+    headers: {
+      'User-Agent': 'SkywaySFOBoard/250 (KSFO FBO ops; +https://skyway-sfo.onrender.com)',
+      'Accept': 'text/html,application/xhtml+xml'
+    },
+    signal: ctrl
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  var html = await res.text();
+  var make = faaParseDataLabel(html, 'Manufacturer Name');
+  var rawModel = faaParseDataLabel(html, 'Model');
+  if (!rawModel && !make) {
+    // Inquiry page sometimes returns search form only for unknown N
+    return { icaoType: '', model: '', make: '', rawModel: '', ok: false, fetchedAt: Date.now() };
+  }
+  var icao = faaIcaoFromModel(rawModel);
+  var model = faaLaymanModel(make, rawModel);
+  return { icaoType: icao, model: model, make: make, rawModel: rawModel, ok: !!(rawModel || make), fetchedAt: Date.now() };
+}
+async function lookupFaaRegistry(reg) {
+  var nKey = faaNKey(reg);
+  if (!nKey) return null;
+  var mem = faaMemCache.get(nKey);
+  if (mem && faaCacheFresh(mem)) return mem;
+  if (faaInflight.has(nKey)) return faaInflight.get(nKey);
+  var p = (async function () {
+    try {
+      var db = await faaLoadFromDb(nKey);
+      if (db && faaCacheFresh(db)) {
+        faaMemCache.set(nKey, db);
+        return db;
+      }
+      var entry = await faaFetchRemote(nKey);
+      faaMemCache.set(nKey, entry);
+      await faaSaveToDb(nKey, entry);
+      return entry;
+    } catch (e) {
+      log('[FAA] lookup ' + nKey + ' failed: ' + e.message, 'WARN');
+      var neg = { icaoType: '', model: '', make: '', rawModel: '', ok: false, fetchedAt: Date.now() };
+      faaMemCache.set(nKey, neg);
+      return neg;
+    } finally {
+      faaInflight.delete(nKey);
+    }
+  })();
+  faaInflight.set(nKey, p);
+  return p;
+}
+function faaApplyLocalEnrichment(movement) {
+  if (!movement) return movement;
+  // Infer N-reg for fractional callsigns so later FAA lookup has a key
+  if (!isNRegIdent(normIdent(movement.reg || movement.ident))) {
+    var inferred = inferFracNReg(movement.callsign || movement.ident || '');
+    if (inferred) {
+      movement.reg = movement.reg || inferred;
+      if (!isNRegIdent(normIdent(movement.ident))) movement.ident = inferred;
+      resolveBoardKey(inferred, movement.callsign || '', null);
+    }
+  }
+  var icao = normalizeIcaoType(movement.type);
+  if (icao) movement.type = icao;
+  if (!movement.model && icao && ICAO_TO_LAYMAN[icao]) movement.model = ICAO_TO_LAYMAN[icao];
+  return movement;
+}
+function persistFaaFields(boardMap, f) {
+  if (!f || !boardMap) return;
+  var liveKey = resolveBoardKey(f.reg || '', f.callsign || '', null) || normIdent(f.ident);
+  var live = liveKey && boardMap.get(liveKey);
+  if (!live) return;
+  if (f.type && !live.type) live.type = f.type;
+  if (f.model && !live.model) live.model = f.model;
+  if (f.reg && !live.reg) live.reg = f.reg;
+  if (f.ident && isNRegIdent(normIdent(f.ident)) && !isNRegIdent(normIdent(live.ident))) live.ident = f.ident;
+}
+var faaBoardEnrichBusy = false;
+function scheduleFaaBoardEnrichment(kindHint) {
+  if (faaBoardEnrichBusy || isIdle()) return;
+  faaBoardEnrichBusy = true;
+  setImmediate(async function () {
+    try {
+      var changed = 0;
+      var boards = kindHint === 'departures' ? ['departures', 'arrivals'] : ['arrivals', 'departures'];
+      for (var bi = 0; bi < boards.length; bi++) {
+        var boardName = boards[bi];
+        var m = movements[boardName];
+        var entries = Array.from(m.entries());
+        for (var i = 0; i < entries.length; i++) {
+          if (isIdle()) break;
+          var key = entries[i][0];
+          var mov = entries[i][1];
+          if (!mov) continue;
+          var beforeType = mov.type || '';
+          var beforeModel = mov.model || '';
+          var beforeReg = mov.reg || '';
+          // Only hit FAA when we still lack type or model and have/can infer an N-number
+          var hasN = isNRegIdent(normIdent(mov.reg || mov.ident)) || !!inferFracNReg(mov.callsign || mov.ident || '');
+          if (!hasN) continue;
+          if (normalizeIcaoType(mov.type) && mov.model) continue;
+          var enriched = await faaEnrichMovement(Object.assign({}, mov));
+          if (!enriched) continue;
+          if (enriched.type && !mov.type) mov.type = enriched.type;
+          if (enriched.model && !mov.model) mov.model = enriched.model;
+          if (enriched.reg && !mov.reg) mov.reg = enriched.reg;
+          if (enriched.ident && isNRegIdent(normIdent(enriched.ident)) && !isNRegIdent(normIdent(mov.ident))) mov.ident = enriched.ident;
+          if ((mov.type || '') !== beforeType || (mov.model || '') !== beforeModel || (mov.reg || '') !== beforeReg) changed++;
+        }
+      }
+      if (changed) broadcast({ type: 'board' });
+    } catch (e) {
+      log('[FAA] board enrichment failed: ' + e.message, 'WARN');
+    } finally {
+      faaBoardEnrichBusy = false;
+    }
+  });
+}
+async function faaEnrichMovement(movement) {
+  if (!movement) return movement;
+  var reg = '';
+  if (isNRegIdent(normIdent(movement.reg))) reg = normIdent(movement.reg);
+  else if (isNRegIdent(normIdent(movement.ident))) reg = normIdent(movement.ident);
+  else {
+    var inferred = inferFracNReg(movement.callsign || movement.ident || '');
+    if (inferred) reg = inferred;
+  }
+  if (!reg) return movement;
+  // Ensure reg field is populated when we inferred it
+  if (!movement.reg && isNRegIdent(reg)) movement.reg = reg;
+  if ((!movement.ident || !isNRegIdent(normIdent(movement.ident))) && isNRegIdent(reg)) {
+    // Prefer showing N-reg as ident once known
+    movement.ident = reg;
+  }
+  var needType = !normalizeIcaoType(movement.type);
+  var needModel = !movement.model;
+  // Instant layman name from ICAO when we already have type (no FAA round-trip needed)
+  if (needModel && !needType) {
+    var quick = ICAO_TO_LAYMAN[normalizeIcaoType(movement.type)];
+    if (quick) { movement.model = quick; needModel = false; }
+  }
+  if (!needType && !needModel) return movement;
+  var entry = await lookupFaaRegistry(reg);
+  if (!entry || !entry.ok) return movement;
+  if (needType && entry.icaoType) movement.type = entry.icaoType;
+  var icaoNow = normalizeIcaoType(movement.type) || entry.icaoType || '';
+  if (needModel) {
+    movement.model = ICAO_TO_LAYMAN[icaoNow] || entry.model || '';
+  }
+  return movement;
+}
+
+// Backfill type/reg onto existing SWIM board rows from the current ADS-B snapshot
+// (even when the aircraft is not matching inbound/outbound heuristics — e.g. on ground / far).
+function backfillBoardFromAdsbList(list) {
+  if (!list || !list.length) return 0;
+  var changed = 0;
+  function applyToMap(boardName) {
+    var m = movements[boardName];
+    m.forEach(function (f, key) {
+      if (!f) return;
+      var needType = !normalizeIcaoType(f.type);
+      var needReg = !isNRegIdent(normIdent(f.reg || f.ident));
+      if (!needType && !needReg) return;
+      var cs = normIdent(f.callsign || f.ident);
+      var id = normIdent(f.ident);
+      for (var i = 0; i < list.length; i++) {
+        var ac = list[i];
+        var flight = normIdent(ac.flight);
+        var reg = normIdent(ac.r || ac.reg);
+        var typ = normalizeIcaoType(ac.t);
+        if (!flight && !reg) continue;
+        var match = (cs && flight && cs === flight) ||
+          (id && reg && id === reg) ||
+          (cs && reg && identAliases.get(cs) === identAliases.get(reg)) ||
+          (flight && (flight === cs || flight === id || identAliases.get(flight) === key));
+        if (!match) continue;
+        if (needReg && isNRegIdent(reg)) {
+          f.reg = reg;
+          if (!isNRegIdent(normIdent(f.ident))) f.ident = reg;
+          resolveBoardKey(reg, f.callsign || flight, ac.hex);
+          changed++;
+          needReg = false;
+        }
+        if (needType && typ) {
+          f.type = typ;
+          changed++;
+          needType = false;
+        }
+        if (!needType && !needReg) break;
+      }
+    });
+  }
+  applyToMap('arrivals');
+  applyToMap('departures');
+  return changed;
+}
+
 async function buildBoard(kind) {
   var m = movements[kind];
   var list = [];
@@ -1794,6 +2168,9 @@ async function buildBoard(kind) {
     if (isLaddBlocked(boardReg, boardCs)) continue;
     if (!isGaBizTraffic(boardCs, boardReg, f.type || '')) continue;
     if (ADB_ENABLED && !isIdle()) f = await adbEnrichIfGap(f);
+    // Sync layman model from ICAO instantly; FAA network lookups are budgeted/backgrounded below
+    f = faaApplyLocalEnrichment(f);
+    persistFaaFields(m, f);
     var key = (f.ident || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     var ramp = rampById[key];
     f.spot = ramp ? ramp.spot : '';
@@ -1807,6 +2184,8 @@ async function buildBoard(kind) {
     var bv = kind === 'arrivals' ? (b.arriveISO || '') : (b.departISO || '');
     return av.localeCompare(bv);
   });
+  // Kick FAA registry fills in background (rate-limited); broadcast when anything new lands
+  scheduleFaaBoardEnrichment(kind);
   return list;
 }
 
@@ -1829,6 +2208,7 @@ function buildStatusPayload() {
   return Object.assign(getCreditSummary(), {
     swim: swimStats,
     adb: adbStatus(),
+    faaRegistry: { cacheSize: faaMemCache.size, inflight: faaInflight.size },
     ladd: { loaded: !!laddStatus.loaded, count: laddStatus.count || 0, source: laddStatus.source || 'stub', error: laddStatus.error || null },
     adsbLol: Object.assign(adsbLolStatusPayload(), {
       backoffSecondsRemaining: Math.max(0, Math.ceil((adsbLolBackoffUntil - Date.now()) / 1000))

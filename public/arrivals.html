@@ -148,7 +148,7 @@ function render(){
     h+='<div class="row '+rowCls+'">'+
       '<div class="hero">'+
         '<div class="tail">'+heli+htmlEsc(f.ident||'—')+(f.callsign&&f.callsign!==f.ident?' <span style="color:var(--t3);font-size:13px;font-weight:600">'+htmlEsc(f.callsign)+'</span>':'')+opPill(f.operator)+'</div>'+
-        '<div class="meta"><span>'+htmlEsc(f.type||'—')+'</span><span class="muted">·</span><span>'+(isArr?'FROM ':'TO ')+htmlEsc(loc||'—')+'</span></div>'+
+        '<div class="meta"><span>'+htmlEsc(f.type||'—')+(f.model?' · '+htmlEsc(f.model):'')+'</span><span class="muted">·</span><span>'+(isArr?'FROM ':'TO ')+htmlEsc(loc||'—')+'</span></div>'+
         spotHtml+paxHtml+towHtml+
       '</div>'+
       '<div class="right"><div class="eta '+st.cls+'">'+htmlEsc(st.txt)+'</div>'+(st.lbl?'<div class="eta-lbl">'+st.lbl+'</div>':'')+'</div>'+

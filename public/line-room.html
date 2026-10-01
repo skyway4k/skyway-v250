@@ -386,7 +386,8 @@ body{display:flex;flex-direction:column;min-height:100vh}
   }
   .fi{font-size:9px!important;padding-left:4px!important;line-height:1.1}
   .ft,.ff,.fm,.fe{font-size:8px!important}
-  .fi .sub,.ft .sub,.ff .sub,.sub{font-size:6.5px!important}
+  .fi .sub,.ft .sub,.ff .sub,.sub{font-size:7px!important}
+  .ft{line-height:1.15!important}
   .pax,.valet{width:auto;min-width:22px;font-size:7px;padding:1px 2px}
   .pax-ro{font-size:7px}
   .chk{transform:scale(0.7)}
@@ -2156,8 +2157,10 @@ function mkRow(f,cls,done){
   // Type with model name sub
   var typeCode=safeStr(f.type);
   var typeCodeSafe=htmlEsc(typeCode);
-  var modelName=MODEL[typeCode]||'';
+  var modelName=(f.model&&String(f.model).trim())||MODEL[typeCode]||'';
+  // Desktop/tablet: ICAO on first line, FAA/layman model on second. Mobile denser: keep two-line via .sub.
   var typeSub=modelName?'<span class="sub">'+htmlEsc(modelName)+'</span>':'';
+  if(!typeCode&&modelName){typeCodeSafe=htmlEsc(modelName);typeSub='';}
   var departSafe=htmlEsc(f.depart);
   var arriveSafe=htmlEsc(f.arrive);
   var rawEta=cls==='ar'?calcMins(f.arriveISO):calcMins(f.departISO);
@@ -3006,7 +3009,7 @@ function showGround(){
       var f=en.f;
       var fromStr=htmlEsc(f.from||'—')+(f.city?' <span style="color:var(--t3);font-size:9px">'+htmlEsc(f.city)+'</span>':'')+(f.country?' <span style="color:var(--red);font-size:9px">'+htmlEsc(f.country)+'</span>':'');
       var typeStr=htmlEsc(f.type||'—');
-      var mdl=MODEL[f.type]||'';
+      var mdl=(f.model&&String(f.model).trim())||MODEL[f.type]||'';
       if(mdl)typeStr+='<br><span style="font-size:8px;color:var(--t3)">'+htmlEsc(mdl)+'</span>';
       var sinceArr=timeAgo(f.arrivedISO);
       var untilDep=f.nextDepart?timeUntil(f.nextDepartISO||''):'—';
@@ -3732,7 +3735,7 @@ function loadRampPlanes(){
         continue; // skip placing a marker on the map
       }
       var isH=HELI[f.type]?true:false;
-      var mdl=MODEL[f.type]||'';
+      var mdl=(f.model&&String(f.model).trim())||MODEL[f.type]||'';
       var wsFt=SPAN[f.type]||60; // wingspan in feet — drives realistic on-map sizing
       var col=isH?'#22c55e':'#f59e0b';
       // Add blue border if position came from live ADS-B (high confidence)
@@ -3832,7 +3835,7 @@ function loadRampPlanes(){
         if(!mSpotName)continue;
         var mSpot=RAMP_SPOTS[mSpotName];
         if(!mSpot)continue;
-        var mMdl=MODEL[mp.type]||'';
+        var mMdl=(mp.model&&String(mp.model).trim())||MODEL[mp.type]||'';
         var mIconData={
           wsFt:SPAN[mp.type]||60,
           type:mp.type||'',
@@ -3936,7 +3939,7 @@ function renderUnassignedSidebar(planes){
   var html='';
   for(var i=0;i<planes.length;i++){
     var p=planes[i];
-    var mdl=MODEL[p.type]||'';
+    var mdl=(p.model&&String(p.model).trim())||MODEL[p.type]||'';
     var typeLine=p.type?(p.type+(mdl?' · '+mdl:'')):'';
     // Operator brand pill if known (uses the existing helper)
     var opPill='';
@@ -4066,7 +4069,7 @@ function doTailLookup(){
     html+='<div style="background:var(--b0);border:1px solid var(--bd);border-radius:8px;padding:12px;margin-bottom:12px">';
     html+='<div style="font-size:16px;font-weight:800;color:var(--cyan);margin-bottom:4px">'+htmlEsc(d.ident)+'</div>';
     if(d.type){
-      var modelName=(typeof MODEL!=="undefined"&&MODEL[d.type])?MODEL[d.type]:(d.model||'');
+      var modelName=(d.model&&String(d.model).trim())||((typeof MODEL!=="undefined"&&MODEL[d.type])?MODEL[d.type]:'');
       html+='<div style="font-size:12px;color:var(--t1)"><b>'+htmlEsc(d.type)+'</b>'+(modelName?' · '+htmlEsc(modelName):'')+'</div>';
     } else {
       html+='<div style="font-size:11px;color:var(--t3);font-style:italic">Aircraft type not found (SWIM/OpenSky/ADB)</div>';
