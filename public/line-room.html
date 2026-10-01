@@ -1326,7 +1326,7 @@ function buildFaMapSet(){
     var now2=Date.now();
     for(var i=0;i<arr.length;i++){
       var f=arr[i];
-      if(f.arrived){var at=f.arriveISO?new Date(f.arriveISO).getTime():0;if(at>0&&(now2-at)>300000)continue;}
+      // Keep landed aircraft in the map's on-ground inventory until departure.
       enrichFlightLoc(f,'ar');
       var info={type:'arr',ident:f.ident,callsign:f.callsign,acType:f.type,from:f.from,city:f.city,country:f.country,intl:f.intl,to:'KSFO',depart:f.depart,arrive:f.arrive,departISO:f.departISO,arriveISO:f.arriveISO};
       var fIdent=f.ident?String(f.ident).toUpperCase():'';
@@ -2503,10 +2503,10 @@ function updateBoardTitles(mode){
   at.textContent='🛬 Scheduled arrivals — through midnight PT';
   dt.textContent='🛫 Scheduled departures — through midnight PT';
   if(mode==='adsb-live'){
-    at.title='GA/bizjet arrivals filed/estimated through midnight Pacific (plus landed <5m). Live ADS-B fills position/progress when SWIM is quiet.';
+    at.title='GA/bizjet arrivals filed/estimated through midnight Pacific; on-ground arrivals remain until departure. Live ADS-B fills position/progress when SWIM is quiet.';
     dt.title='GA/bizjet departures filed/estimated through midnight Pacific. Live ADS-B fills gaps when SWIM is quiet.';
   } else {
-    at.title='Filed/estimated arrivals through midnight America/Los_Angeles. Landed flights drop after 5 minutes.';
+    at.title='Filed/estimated arrivals through midnight America/Los_Angeles; landed arrivals remain until departure.';
     dt.title='Filed/estimated departures through midnight America/Los_Angeles.';
   }
 }
@@ -2557,14 +2557,11 @@ function fetchBoards(){
       if(window._manuallyDeparted&&window._manuallyDeparted[_depId])continue;
       var arrTime=f.arriveISO?new Date(f.arriveISO).getTime():0;
       var minsSinceArr=arrTime>0?Math.round((now-arrTime)/60000):-999;
-      // Landed aircraft stay on the active board for 5 minutes only, then drop entirely
-      // (no long-lived ✓ Arrived list — ramp already saw them; On Ground HUD still has history).
-      // Midnight schedule window must NOT keep already-landed rows.
+      // Keep all on-ground arrivals in the arrivals column until a matching
+      // departure is observed; there is no five-minute landed timeout.
       if(f.arrived||(arrTime>0&&minsSinceArr>=0)){
-        var landMs=arrTime>0?arrTime:(f.landedAt||f.lastUpdate||0);
-        var minsLand=landMs?Math.round((now-landMs)/60000):999;
-        if(minsLand>=0&&minsLand<5){f._landed=true;active.push(f);}
-        // else: drop after 5 minutes
+        f._landed=true;
+        if(!f.departed)active.push(f);
         continue;
       }
       // Live ADS-B inbound heuristic: arriveISO is geometric ETA — keep while still inbound.
@@ -2580,7 +2577,7 @@ function fetchBoards(){
     completed.sort(function(a,b){return(b.arriveISO||'').localeCompare(a.arriveISO||'');});
     if(active.length>0){
       var h='';
-      for(var i=0;i<Math.min(active.length,30);i++){h+=mkRow(active[i],'ar',false);}
+      for(var i=0;i<active.length;i++){h+=mkRow(active[i],'ar',false);}
       ab.innerHTML=h;
       document.getElementById('anc').textContent=active.length;if(window.twemoji)twemoji.parse(ab);
     }else{ab.innerHTML='<div class="empty">No inbound GA</div>';document.getElementById('anc').textContent='0';}

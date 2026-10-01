@@ -609,7 +609,11 @@ function isGaBizTraffic(flight, reg, typeCode) {
   if (/^(A318|A319|A320|A321|A19N|A20N|A21N|A332|A333|A339|A359|A35K|A388|B71|B72|B73|B74|B75|B76|B77|B78|B37M|B38M|B39M|CRJ|E17|E19|E75|E29|BCS|MD8|MD9|DH8)/.test(t)) return false;
   if (cs && AIRLINE_CS.has(cs.substring(0, 3))) return false;
   if (FRAC_CS.test(cs)) return true;
-  if (r.charAt(0) === 'N' && r.length > 1 && r.charAt(1) >= '0' && r.charAt(1) <= '9') {
+  // TFMS filed plans commonly carry the N-number in ACID/callsign and omit the
+  // registration element. Treat either field as an N-reg; otherwise plan-only
+  // arrivals disappear before ADS-B ever supplies a tail number.
+  var nRegCallsign = isNRegIdent(cs);
+  if ((r.charAt(0) === 'N' && r.length > 1 && r.charAt(1) >= '0' && r.charAt(1) <= '9') || nRegCallsign) {
     if (/^[A-Z]{3}\d/.test(cs) && AIRLINE_CS.has(cs.substring(0, 3))) return false;
     // N-reg with empty/own callsign — GA/biz default OK unless type is airliner (handled above)
     return true;
@@ -628,7 +632,7 @@ var swimStats = {
   feeds: { tfms: { connected: false, msgs: 0 }, sfdps: { connected: false, msgs: 0, enabled: !!SWIM_QUEUE_SFDPS } }
 };
 var movements = { arrivals: new Map(), departures: new Map() }; // key: canonical ident (prefer N-reg)
-var landedDroppedAt = new Map(); // arrivals pruned after 5m landed hold — block midnight SWIM re-add
+var landedDroppedAt = new Map(); // legacy suppression map; landed rows now remain until departure
 
 // ------------------------------------------------------------------------------------------
 // Board day window — keep KSFO TFMS/SWIM filed plans through midnight America/Los_Angeles
@@ -784,7 +788,15 @@ function mergeMovementMaps(fromKey, toKey) {
 function rememberTfmsPlan(key, fields) {
   if (!key) return;
   var prev = tfmsPlanByAircraft.get(key) || {};
-  var next = Object.assign({}, prev, fields, { rememberedAt: Date.now() });
+  // TFMS emits amend/status messages with only a subset of the filed-plan
+  // fields. Never let an empty partial update erase the filed route or times;
+  // SWIM remains authoritative until a newer non-empty value arrives.
+  var next = Object.assign({}, prev);
+  Object.keys(fields || {}).forEach(function (name) {
+    var value = fields[name];
+    if (value !== undefined && value !== null && (value !== '' || !next[name])) next[name] = value;
+  });
+  next.rememberedAt = Date.now();
   tfmsPlanByAircraft.set(key, next);
   // Mirror under every alias that points here
   identAliases.forEach(function (canon, alias) {
@@ -1140,7 +1152,9 @@ function ingestSwimFlightBlock(block, feedLabel) {
   } else if (type === 'DEPARTURE' && airportMatch(orig, AIRPORT_ICAO)) {
     swimStats.departures++;
     rememberIfKsfo('departures');
-    upsertMovement('departures', key, { ident: ident, callsign: cs || '', reg: tail || '', type: acType || '', to: dest || '', departed: true, departISO: etd || nowISO, depart: fmtTimeLA(etd || nowISO), source: srcTag, timeSource: 'swim', etaNote: '' });
+    var departurePatch = { ident: ident, callsign: cs || '', reg: tail || '', type: acType || '', to: dest || '', departed: true, departISO: etd || nowISO, depart: fmtTimeLA(etd || nowISO), source: srcTag, timeSource: 'swim', etaNote: '' };
+    upsertMovement('departures', key, departurePatch);
+    removeLandedArrivalOnDeparture(key, departurePatch);
     did = true;
   } else if (type === 'DEPARTURE' && airportMatch(dest, AIRPORT_ICAO)) {
     swimStats.arrivals++;
@@ -1683,6 +1697,7 @@ async function pollAdsbInboundBoard() {
           }
         }
         upsertMovement('departures', boardKeyD, patchD);
+        if (patchD.departed) removeLandedArrivalOnDeparture(boardKeyD, patchD);
         keepDep[boardKeyD] = true;
         keepDep[key] = true;
         depN++;
@@ -1711,8 +1726,7 @@ async function pollAdsbInboundBoard() {
 
 var groundCache = {}; // accumulated from arrivals marked arrived, same idea as v249
 
-const LANDED_KEEP_MS = 5 * 60 * 1000; // show landed arrivals for 5 minutes, then drop from board
-// After prune, suppress SWIM midnight keep-alive from re-adding the same landed row until a future plan.
+const LANDED_KEEP_MS = 0; // landed arrivals remain on the arrivals board until a departure is observed
 function landClockMs(f, now) {
   // Prefer detection time (landedAt) so hold is 5m from when we saw the landing,
   // not from a stale filed ETA that may be hours old when SWIM ARRIVAL arrives late.
@@ -1725,17 +1739,20 @@ function landClockMs(f, now) {
 
 function pruneLandedArrivals() {
   var now = Date.now();
-  var dropped = 0;
+  var changed = false;
   movements.arrivals.forEach(function (f, key) {
     if (!f) return;
     var arrMs = f.arriveISO ? new Date(f.arriveISO).getTime() : 0;
     if (arrMs && isNaN(arrMs)) arrMs = 0;
     var landed = !!f.arrived || (arrMs > 0 && arrMs <= now);
     if (!landed) return;
+    // A filed/estimated arrival that has passed is on-ground for retention
+    // purposes even if SWIM has not emitted its explicit ARRIVAL event yet.
+    if (!f.arrived && arrMs > 0 && arrMs <= now) f.onGround = true;
     var landMs = landClockMs(f, now);
     if (!f.landedAt) f.landedAt = landMs;
-    if ((now - landMs) < LANDED_KEEP_MS) return;
-    // Preserve for On Ground HUD before dropping from the live arrivals board.
+    // Do not age landed rows off the board. Ramp staff use this column as the
+    // on-ground inventory until a matching departure is observed.
     if (f.ident) {
       groundCache[key] = {
         ident: f.ident, callsign: f.callsign, type: f.type, from: f.from,
@@ -1743,11 +1760,47 @@ function pruneLandedArrivals() {
         arrivedTime: f.arrive, arrivedISO: f.arriveISO || (f.landedAt ? new Date(f.landedAt).toISOString() : ''), departISO: f.departISO
       };
     }
-    movements.arrivals.delete(key);
-    landedDroppedAt.set(key, now);
-    dropped++;
+    changed = true;
   });
-  return dropped > 0;
+  return changed;
+}
+
+// Remove an on-ground arrival only after the same aircraft is observed departing.
+// TFMS may identify it by tail, callsign, or both, so compare every canonical alias.
+function removeLandedArrivalOnDeparture(key, patch) {
+  var candidates = [];
+  function add(v) {
+    var n = normIdent(v);
+    if (!n) return;
+    var c = identAliases.get(n) || n;
+    if (candidates.indexOf(c) < 0) candidates.push(c);
+    if (candidates.indexOf(n) < 0) candidates.push(n);
+  }
+  add(key);
+  add(patch && patch.ident);
+  add(patch && patch.reg);
+  add(patch && patch.callsign);
+  add(resolveBoardKey(patch && patch.reg, patch && patch.callsign, null));
+  var removed = false;
+  movements.arrivals.forEach(function (f, arrivalKey) {
+    if (!f) return;
+    var arrivalMs = f.arriveISO ? Date.parse(f.arriveISO) : 0;
+    if (!f.arrived && !f.onGround && !(arrivalMs && arrivalMs <= Date.now())) return;
+    var matches = candidates.indexOf(arrivalKey) >= 0;
+    if (!matches) {
+      var vals = [f.ident, f.reg, f.callsign];
+      for (var i = 0; i < vals.length && !matches; i++) {
+        var n = normIdent(vals[i]);
+        if (n && (candidates.indexOf(n) >= 0 || candidates.indexOf(identAliases.get(n)) >= 0)) matches = true;
+      }
+    }
+    if (matches) {
+      movements.arrivals.delete(arrivalKey);
+      delete groundCache[arrivalKey];
+      removed = true;
+    }
+  });
+  return removed;
 }
 
 function pruneAndAccumulateGround() {
@@ -1755,7 +1808,9 @@ function pruneAndAccumulateGround() {
     if (f.arrived && f.ident) groundCache[key] = { ident: f.ident, callsign: f.callsign, type: f.type, from: f.from, arrivedTime: f.arrive, arrivedISO: f.arriveISO, departISO: f.departISO };
   });
   movements.departures.forEach(function (f, key) {
-    if (f.departed && groundCache[key]) delete groundCache[key];
+    if (!f || !f.departed) return;
+    removeLandedArrivalOnDeparture(key, f);
+    if (groundCache[key]) delete groundCache[key];
   });
   var cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
   for (var k in groundCache) { if (groundCache[k].arrivedISO && new Date(groundCache[k].arrivedISO).getTime() < cutoff) delete groundCache[k]; }
