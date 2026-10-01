@@ -180,15 +180,15 @@ img.emoji{height:1em;width:1em;margin:0 .05em 0 .1em;vertical-align:-0.1em;displ
   @page{margin:0.5in;size:letter}
 }
 
-/* ARRIVALS-FIRST RESPONSIVE
-   Priority when the viewport shrinks: arrivals board stays fully readable (never clip columns).
-   Map + forecast shrink first, then stack below the boards. */
+/* MAP-FIRST RESPONSIVE
+   Keep the page flow predictable at every desktop/tablet width: header, map + forecast,
+   then the scheduled boards. The phone-only coarse-pointer rule below hides the map. */
 body{display:flex;flex-direction:column;min-height:100vh}
 .topbar{order:0;flex-shrink:0}
-.boards{order:1}
-.done-boards{order:2}
-.resize-bar{order:3}
-.map-row{order:4;flex-shrink:0}
+.map-row{order:1;flex-shrink:0}
+.resize-bar{order:2}
+.boards{order:3}
+.done-boards{order:4}
 /* Overlays stay out of flex flow */
 #heli-overlay,#gnd-overlay,#shift-overlay,#tail-lookup-modal,#cesium-overlay,#ramp-overlay{order:99}
 
@@ -223,12 +223,8 @@ body{display:flex;flex-direction:column;min-height:100vh}
   .chart-area{min-width:160px}
 }
 @media (max-width: 1200px){
-  /* Stack map/forecast below boards; shrink map so arrivals stay above the fold */
-  .map-row{order:5;height:200px;min-height:180px;margin:8px 12px}
-  .boards{order:1}
-  .done-boards{order:2}
-  .resize-bar{order:3;display:none} /* map already below — grip unused */
-  .map-row{flex-direction:row}
+  /* Keep map + forecast above the boards while giving the boards their own scroll area. */
+  .map-row{height:200px;min-height:180px;margin:8px 12px;flex-direction:row}
 }
 @media (max-width: 900px){
   .map-row{flex-direction:column;height:auto;min-height:auto}
@@ -373,8 +369,8 @@ body{display:flex;flex-direction:column;min-height:100vh}
    desktop Cmd+/browser-zoom (which shrinks CSS px width) does NOT hide map or hourly chart. */
 @media (max-width: 900px) and (hover: none) and (pointer: coarse){
   .map-row,.resize-bar{display:none!important}
-  .boards{grid-template-columns:1fr;gap:0;order:1}
-  .done-boards{order:2}
+  .boards{grid-template-columns:1fr;gap:0;order:3}
+  .done-boards{order:4}
   .board:first-child{border-right:none}
   .boards > .board:first-child{order:1}
   .boards > .board:last-child{order:2}
