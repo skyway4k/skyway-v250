@@ -70,10 +70,8 @@ body{font-family:var(--sans);background:var(--b0);color:var(--t1);min-height:100
 .bt{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:1.2px}
 .bt.ar{color:var(--blue)}.bt.de{color:var(--red)}
 .bc{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--t3)}
-/* Column system. Two patterns: content columns use fr units (flex-share of remaining space);
-   icon columns (OP, STATUS) use fixed pixel widths because they hold same-size pills regardless
-   of how wide the table is. fr-sized pill columns get visually huge on wide screens for no
-   reason (an "NJ" pill doesn't need 80px). */
+/* Column system. IDENT is kept intrinsic/tight; data columns share the remaining space while
+   OP and STATUS stay compact because their pills do not need a wide empty track. */
 .cols{display:grid;grid-template-columns:minmax(5.5rem,1.15fr) 28px 52px 1.15fr 1.35fr .95fr .95fr .8fr .8fr .55fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
 .cols.ca-done{display:grid;grid-template-columns:minmax(5.5rem,1.15fr) 28px 52px 1.15fr 1.35fr .95fr .95fr .85fr .8fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
 .cols.cd-done{display:grid;grid-template-columns:minmax(5.5rem,1.15fr) 28px 52px 1.15fr 1.35fr .95fr .85fr .8fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
@@ -407,6 +405,79 @@ body{display:flex;flex-direction:column;min-height:100vh}
   .boards > .board:first-child .fr.arr-active,
   .done-boards > .board:first-child .cols.ca-done,
   .done-boards > .board:first-child .fr.arr-done{min-width:520px}
+}
+
+
+/* Final board sizing: IDENT stays at its intrinsic tail width instead of consuming a
+   share of the board. Every data column has a floor and the same 1fr growth rule, so
+   ETA/spot/time columns remain present; when zoom or a narrow viewport exhausts the
+   floors the board scrolls as one unit and cells wrap rather than clipping text. */
+:root{
+  --ident-track:minmax(4.25rem,4.75rem);
+  --op-track:minmax(28px,28px);
+  --status-track:minmax(44px,52px);
+  --type-track:minmax(3rem,1fr);
+  --route-track:minmax(3rem,1fr);
+  --time-track:minmax(3rem,1fr);
+  --eta-track:minmax(2.75rem,1fr);
+  --spot-track:minmax(3rem,1fr);
+  --pax-track:minmax(2.25rem,1fr);
+}
+.cols.ca,.fr.ar{
+  grid-template-columns:var(--ident-track) var(--op-track) var(--status-track) var(--type-track) var(--route-track) var(--time-track) var(--time-track) var(--eta-track) var(--spot-track) var(--pax-track)!important;
+}
+.cols.cd,.fr.dep{
+  grid-template-columns:var(--ident-track) var(--op-track) var(--status-track) var(--type-track) var(--route-track) var(--time-track) var(--eta-track) var(--spot-track)!important;
+}
+.cols.ca-done,.fr.arr-done{
+  grid-template-columns:var(--ident-track) var(--op-track) var(--status-track) var(--type-track) var(--route-track) var(--time-track) var(--time-track) var(--eta-track) var(--spot-track)!important;
+}
+.cols.cd-done,.fr.dep-simple{
+  grid-template-columns:var(--ident-track) var(--op-track) var(--status-track) var(--type-track) var(--route-track) var(--time-track) var(--eta-track) var(--spot-track)!important;
+}
+.cols.ca,.cols.cd,.cols.ca-done,.cols.cd-done,.fr{column-gap:3px!important}
+.fi{min-width:0!important;padding-left:4px!important}
+.board{min-width:0;overflow-x:auto}
+.board .bb{overflow-x:visible}
+.fr.intl-arrival-row{
+  background:linear-gradient(90deg,rgba(37,99,235,.30),rgba(37,99,235,.14) 68%,rgba(37,99,235,.06));
+  border-color:rgba(37,99,235,.58);
+  box-shadow:inset 5px 0 0 #2563eb,0 1px 2px rgba(37,99,235,.12);
+}
+.fr.intl-row.intl-arrival-row.arr-active{background:linear-gradient(90deg,rgba(37,99,235,.30),rgba(37,99,235,.14) 68%,rgba(37,99,235,.06));border-color:rgba(37,99,235,.58);box-shadow:inset 5px 0 0 #2563eb,0 1px 2px rgba(37,99,235,.12)}
+.fr.intl-row.intl-arrival-row:hover{background:linear-gradient(90deg,rgba(37,99,235,.38),rgba(37,99,235,.18) 68%,rgba(37,99,235,.08))}
+.customs-badge{display:inline-flex;align-items:center;justify-content:center;width:20px;height:18px;margin:0!important;border-radius:3px;background:#2563eb;color:#fff;font-size:12px;line-height:1;box-shadow:0 0 5px rgba(37,99,235,.35)}
+@media (max-width:900px){
+  :root{
+    --ident-track:minmax(3.5rem,4rem);--op-track:minmax(24px,24px);--status-track:minmax(40px,44px);
+    --type-track:minmax(2.75rem,1fr);--route-track:minmax(2.75rem,1fr);--time-track:minmax(2.5rem,1fr);
+    --eta-track:minmax(2.25rem,1fr);--spot-track:minmax(2.75rem,1fr);--pax-track:minmax(2rem,1fr)
+  }
+  .cols.ca,.cols.cd,.cols.ca-done,.cols.cd-done,.fr{column-gap:2px!important}
+  .customs-badge{width:17px;height:16px;font-size:10px}
+}
+@media (max-width:500px){
+  :root{
+    --ident-track:minmax(3.5rem,4rem);--op-track:minmax(22px,22px);--status-track:minmax(40px,40px);
+    --type-track:minmax(2.5rem,1fr);--route-track:minmax(2.75rem,1fr);--time-track:minmax(2.5rem,1fr);
+    --eta-track:minmax(2.25rem,1fr);--spot-track:minmax(2.5rem,1fr);--pax-track:minmax(1.75rem,1fr)
+  }
+  .customs-badge{width:15px;height:14px;font-size:9px}
+}
+@media (max-width:429px){
+  :root{
+    --ident-track:minmax(3.5rem,4rem);--op-track:minmax(20px,20px);--status-track:minmax(36px,36px);
+    --type-track:minmax(2.25rem,1fr);--route-track:minmax(2.5rem,1fr);--time-track:minmax(2.25rem,1fr);
+    --eta-track:minmax(2rem,1fr);--spot-track:minmax(2.5rem,1fr);--pax-track:minmax(1.65rem,1fr)
+  }
+}
+@media (max-width:900px) and (hover:none) and (pointer:coarse){
+  :root{
+    --ident-track:minmax(3rem,3.5rem);--op-track:minmax(20px,20px);--status-track:minmax(36px,36px);
+    --type-track:minmax(2.25rem,1fr);--route-track:minmax(2.5rem,1fr);--time-track:minmax(2.25rem,1fr);
+    --eta-track:minmax(2rem,1fr);--spot-track:minmax(2.5rem,1fr);--pax-track:minmax(1.65rem,1fr)
+  }
+  .customs-badge{width:13px;height:12px;font-size:8px}
 }
 
 </style>
@@ -2160,7 +2231,9 @@ function mkRow(f,cls,done){
   if(!loc){loc='—';locSafe='—';}
   var ffcls=f.intl?'ff intl':'ff';
   var intlBadge=f.intl?'<span class="intl-badge" title="International">INTL</span>':'';
-  var intlRowCls=f.intl?' intl-row':'';
+  var intlArrival=cls==='ar'&&f.intl;
+  var intlRowCls=f.intl?' intl-row'+(intlArrival?' intl-arrival-row':''):'';
+  var customsBadge=intlArrival?'<span class="customs-badge" title="International arrival — customs">🛃</span>':'';
   // Type with model name sub
   var typeCode=safeStr(f.type);
   var typeCodeSafe=htmlEsc(typeCode);
@@ -2286,7 +2359,7 @@ function mkRow(f,cls,done){
     }
     var subRowAD=f.callsign?'<span class="sub" style="display:flex;flex-wrap:wrap;align-items:center;gap:3px;flex-basis:100%;width:100%">'+
       callsignSafe+'</span>':'';
-    return '<div class="fr arr-done'+intlRowCls+'"><span class="fi zp" data-zp="'+safeId3+'">'+idSafe+subRowAD+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+vipBadgeDone+gpuBadgeDone+medBadge+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+ffcls+'">'+flag+(flag?' ':'')+(locSafe||'—')+intlBadge+locSub+'</span><span class="fm">'+(departSafe||'—')+'</span><span class="fm">'+(arriveSafe||'—')+'</span><span class="'+fecls+'">'+etaStr+'</span>'+arrSpotCell+'</div>';
+    return '<div class="fr arr-done'+intlRowCls+'"><span class="fi zp" data-zp="'+safeId3+'">'+idSafe+subRowAD+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+customsBadge+vipBadgeDone+gpuBadgeDone+medBadge+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+ffcls+'">'+flag+(flag?' ':'')+(locSafe||'—')+intlBadge+locSub+'</span><span class="fm">'+(departSafe||'—')+'</span><span class="fm">'+(arriveSafe||'—')+'</span><span class="'+fecls+'">'+etaStr+'</span>'+arrSpotCell+'</div>';
   }
   var enRoute=hasDep&&!done&&!f._landed;
   var gd=enRoute?'<span style="position:absolute;left:4px;top:8px;width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 5px rgba(34,197,94,.5)"></span>':'';
@@ -2376,7 +2449,7 @@ function mkRow(f,cls,done){
   var towHint=rampRec.towNotes?'<span class="ramp-tow" title="'+htmlEsc(rampRec.towNotes)+'">📝</span>':'';
   var editBtn=(VIEW_MODE==='dispatch')?'<button class="ramp-edit-btn" type="button" title="Edit pax / flags / tow notes" onclick="event.stopPropagation();openRampEdit(\''+safeId+'\',\''+idSafe.replace(/'/g,"\\'")+'\')">✎</button>':'';
   var paxHtml=(VIEW_MODE==='dispatch')?('<input class="pax" type="number" min="0" max="99" placeholder="—" id="pax_'+paxId+'" data-plane="'+safeId+'" value="'+htmlEsc(String(paxVal))+'" oninput="event.stopPropagation();schedulePaxSave(this)" onclick="event.stopPropagation()" />'):('<span class="pax-ro">'+htmlEsc(String(paxVal||'—'))+'</span>');
-  return '<div class="fr'+rowCls+flashClass+intlRowCls+(f.divertTo?' divert-row':'')+'"><span class="fi zp" data-zp="'+safeId+'">'+gd+idSafe+subRow+depBadgeHtml+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+divertBadge+qtBadge+vipBadge+gpuBadge+medBadge+customFlagsHtml+towHint+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+ffcls+'">'+flag+(flag?' ':'')+(locSafe||'—')+intlBadge+locSub+'</span><span class="fm">'+(departSafe||'—')+'</span><span class="fm">'+(arriveSafe||'—')+'</span><span class="'+fecls+'">'+etaStr+'</span>'+spotCell+'<span class="pax-cell">'+paxHtml+editBtn+'</span></div>';
+  return '<div class="fr'+rowCls+flashClass+intlRowCls+(f.divertTo?' divert-row':'')+'"><span class="fi zp" data-zp="'+safeId+'">'+gd+idSafe+subRow+depBadgeHtml+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+customsBadge+divertBadge+qtBadge+vipBadge+gpuBadge+medBadge+customFlagsHtml+towHint+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+ffcls+'">'+flag+(flag?' ':'')+(locSafe||'—')+intlBadge+locSub+'</span><span class="fm">'+(departSafe||'—')+'</span><span class="fm">'+(arriveSafe||'—')+'</span><span class="'+fecls+'">'+etaStr+'</span>'+spotCell+'<span class="pax-cell">'+paxHtml+editBtn+'</span></div>';
 }
 
 function calcMins(isoTime){
