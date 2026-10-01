@@ -122,7 +122,7 @@ function statusFor(f,isArr){
     var m=calcMins(f.arriveISO);
     if(f.arrived)return{txt:'LANDED',cls:'landed',lbl:''};
     if(m<=5&&m>=0)return{txt:'FINAL',cls:'final',lbl:'min'};
-    if(m<0&&!f.arrived)return{txt:'LANDED',cls:'landed',lbl:''};
+    if(f.arriveISO&&m<0&&!f.arrived)return{txt:'LANDED',cls:'landed',lbl:''};
     return{txt:fmtHM(m),cls:m<=15?'soon':m<=60?'':'far',lbl:'ETA'};
   } else {
     if(f.departed)return{txt:'GONE',cls:'landed',lbl:''};

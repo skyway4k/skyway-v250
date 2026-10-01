@@ -2116,7 +2116,7 @@ function mkRow(f,cls,done){
   }
   else if(cls==='ar'&&!done&&f._landed)etaStr='<span class="arr-eta" data-tail="'+htmlEsc((f.ident||'').toUpperCase())+'" data-callsign="'+htmlEsc((f.callsign||'').toUpperCase())+'" style="color:var(--green);font-weight:700">LANDED</span>';
   else if(cls==='ar'&&!done&&rawEta<=5&&rawEta>0)etaStr='<span class="arr-eta" data-tail="'+htmlEsc((f.ident||'').toUpperCase())+'" data-callsign="'+htmlEsc((f.callsign||'').toUpperCase())+'" style="color:var(--amber);font-weight:700">FINAL</span>';
-  else if(cls==='ar'&&!done&&rawEta<=0)etaStr='<span class="arr-eta" data-tail="'+htmlEsc((f.ident||'').toUpperCase())+'" data-callsign="'+htmlEsc((f.callsign||'').toUpperCase())+'" style="color:var(--green);font-weight:700">LANDED</span>';
+  else if(cls==='ar'&&!done&&f.arriveISO&&rawEta<=0)etaStr='<span class="arr-eta" data-tail="'+htmlEsc((f.ident||'').toUpperCase())+'" data-callsign="'+htmlEsc((f.callsign||'').toUpperCase())+'" style="color:var(--green);font-weight:700">LANDED</span>';
   else if(rawEta>0){
     etaStr=fmtHM(rawEta);
     if(f.etaNote||(f.source&&String(f.source).indexOf('adsb')===0)){
@@ -2388,17 +2388,20 @@ function fetchBoards(){
       var f=arr[i];
       var _depId=safeStr(f.ident).replace(/[^a-zA-Z0-9]/g,'');
       if(window._manuallyDeparted&&window._manuallyDeparted[_depId])continue;
-      // Live ADS-B inbound heuristic: arriveISO is last-seen, not a schedule — keep in active.
-      if(f.source==='adsb-inbound'||f.source==='adsb'){active.push(f);continue;}
       var arrTime=f.arriveISO?new Date(f.arriveISO).getTime():0;
       var minsSinceArr=arrTime>0?Math.round((now-arrTime)/60000):-999;
       // Landed aircraft stay on the active board for 5 minutes only, then drop entirely
       // (no long-lived ✓ Arrived list — ramp already saw them; On Ground HUD still has history).
-      if(f.arrived||minsSinceArr>=0){
-        if(minsSinceArr>=0&&minsSinceArr<5){f._landed=true;active.push(f);}
+      // Midnight schedule window must NOT keep already-landed rows.
+      if(f.arrived||(arrTime>0&&minsSinceArr>=0)){
+        var landMs=arrTime>0?arrTime:(f.landedAt||f.lastUpdate||0);
+        var minsLand=landMs?Math.round((now-landMs)/60000):999;
+        if(minsLand>=0&&minsLand<5){f._landed=true;active.push(f);}
         // else: drop after 5 minutes
         continue;
       }
+      // Live ADS-B inbound heuristic: arriveISO is geometric ETA — keep while still inbound.
+      if(f.source==='adsb-inbound'||f.source==='adsb'){active.push(f);continue;}
       // Scheduled window: through midnight America/Los_Angeles (keep if no time).
       var win=inBoardDayWindow(f.arriveISO,now);
       if(win===false)continue;

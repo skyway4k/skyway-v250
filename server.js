@@ -619,6 +619,7 @@ var swimStats = {
   feeds: { tfms: { connected: false, msgs: 0 }, sfdps: { connected: false, msgs: 0, enabled: !!SWIM_QUEUE_SFDPS } }
 };
 var movements = { arrivals: new Map(), departures: new Map() }; // key: canonical ident (prefer N-reg)
+var landedDroppedAt = new Map(); // arrivals pruned after 5m landed hold — block midnight SWIM re-add
 
 // ------------------------------------------------------------------------------------------
 // Board day window — keep KSFO TFMS/SWIM filed plans through midnight America/Los_Angeles
@@ -766,6 +767,10 @@ function lookupTfmsPlan(key) {
 function pruneTfmsPlansPastMidnight() {
   var eod = endOfDayPTMs(Date.now());
   var dropped = 0;
+  // Roll landed-drop suppressions from prior PT days
+  landedDroppedAt.forEach(function (at, key) {
+    if (at < eod - 24 * 3600000) landedDroppedAt.delete(key);
+  });
   tfmsPlanByAircraft.forEach(function (plan, key) {
     var t = plan.arriveISO ? Date.parse(plan.arriveISO) : (plan.departISO ? Date.parse(plan.departISO) : 0);
     // Drop plans whose filed time is past end of their PT day (+ small grace after midnight)
@@ -1204,6 +1209,40 @@ function upsertMovement(board, key, patch) {
     : (existing.ident || patch.ident);
   if (isNRegIdent(resolved) && (!merged.ident || !isNRegIdent(normIdent(merged.ident)))) merged.ident = resolved;
 
+  // Do not blank filed times with empty SWIM/ADS-B patches.
+  if (!(patch && patch.arriveISO) && existing.arriveISO) {
+    merged.arriveISO = existing.arriveISO;
+    if (!merged.arrive) merged.arrive = existing.arrive;
+  }
+  if (!(patch && patch.departISO) && existing.departISO) {
+    merged.departISO = existing.departISO;
+    if (!merged.depart) merged.depart = existing.depart;
+  }
+
+  // Once landed, do not un-land via FLIGHT_PLAN/EN_ROUTE keep-alive (midnight retention is for pre-departure only).
+  // Also freeze the land clock so repeated SWIM ARRIVAL msgs with nowISO cannot extend the 5m hold.
+  if (existing.arrived && board === 'arrivals') {
+    merged.arrived = true;
+    merged.landedAt = existing.landedAt || landClockMs(existing, Date.now());
+    if (existing.arriveISO) {
+      merged.arriveISO = existing.arriveISO;
+      merged.arrive = existing.arrive || merged.arrive;
+    }
+  }
+  if (merged.arrived && board === 'arrivals' && !merged.landedAt) {
+    merged.landedAt = Date.now(); // 5m hold starts at arrival detection
+  }
+
+  // Suppress re-adding a pruned landed arrival unless a new future ETA is filed.
+  if (board === 'arrivals' && landedDroppedAt.has(resolved)) {
+    var newEta = merged.arriveISO ? Date.parse(merged.arriveISO) : 0;
+    var futurePlan = newEta && !isNaN(newEta) && newEta > Date.now() + 10 * 60000;
+    if (!futurePlan) return;
+    landedDroppedAt.delete(resolved);
+    merged.arrived = false;
+    delete merged.landedAt;
+  }
+
   merged.lastUpdate = Date.now();
   m.set(resolved, merged);
 }
@@ -1630,25 +1669,39 @@ async function pollAdsbInboundBoard() {
 var groundCache = {}; // accumulated from arrivals marked arrived, same idea as v249
 
 const LANDED_KEEP_MS = 5 * 60 * 1000; // show landed arrivals for 5 minutes, then drop from board
+// After prune, suppress SWIM midnight keep-alive from re-adding the same landed row until a future plan.
+function landClockMs(f, now) {
+  // Prefer detection time (landedAt) so hold is 5m from when we saw the landing,
+  // not from a stale filed ETA that may be hours old when SWIM ARRIVAL arrives late.
+  if (f.landedAt && !isNaN(f.landedAt)) return f.landedAt;
+  var arrMs = f.arriveISO ? new Date(f.arriveISO).getTime() : 0;
+  if (arrMs && !isNaN(arrMs) && arrMs <= now) return arrMs;
+  if (f.lastUpdate && !isNaN(f.lastUpdate)) return f.lastUpdate;
+  return now;
+}
+
 function pruneLandedArrivals() {
   var now = Date.now();
   var dropped = 0;
   movements.arrivals.forEach(function (f, key) {
     if (!f) return;
     var arrMs = f.arriveISO ? new Date(f.arriveISO).getTime() : 0;
+    if (arrMs && isNaN(arrMs)) arrMs = 0;
     var landed = !!f.arrived || (arrMs > 0 && arrMs <= now);
     if (!landed) return;
-    if (!arrMs) return;
-    if ((now - arrMs) < LANDED_KEEP_MS) return;
+    var landMs = landClockMs(f, now);
+    if (!f.landedAt) f.landedAt = landMs;
+    if ((now - landMs) < LANDED_KEEP_MS) return;
     // Preserve for On Ground HUD before dropping from the live arrivals board.
     if (f.ident) {
       groundCache[key] = {
         ident: f.ident, callsign: f.callsign, type: f.type, from: f.from,
         city: f.city, country: f.country, intl: f.intl,
-        arrivedTime: f.arrive, arrivedISO: f.arriveISO, departISO: f.departISO
+        arrivedTime: f.arrive, arrivedISO: f.arriveISO || (f.landedAt ? new Date(f.landedAt).toISOString() : ''), departISO: f.departISO
       };
     }
     movements.arrivals.delete(key);
+    landedDroppedAt.set(key, now);
     dropped++;
   });
   return dropped > 0;
@@ -1783,6 +1836,7 @@ function buildStatusPayload() {
     adsbPrimary: ADSB_PRIMARY,
     boardMode: SWIM_ENABLED ? 'swim' : 'adsb-live',
     boardWindow: 'until-midnight-PT',
+    landedHoldMs: LANDED_KEEP_MS,
     idle: { paused: isIdle(), secondsSinceLastClient: Math.round((Date.now() - lastClientSeenAt) / 1000) },
     connectedClients: wsClients.size,
     airport: AIRPORT_ICAO
