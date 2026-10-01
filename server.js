@@ -1120,6 +1120,62 @@ function pruneAndAccumulateGround() {
   for (var k in groundCache) { if (groundCache[k].arrivedISO && new Date(groundCache[k].arrivedISO).getTime() < cutoff) delete groundCache[k]; }
 }
 
+
+// ------------------------------------------------------------------------------------------
+// Airport city / intl enrichment for board rows (SWIM/OpenSky do not ship city names).
+// Same rules as the client APT_CITY table — keep the lists roughly in sync.
+// ------------------------------------------------------------------------------------------
+const APT_CITY = {
+  KSFO:'San Francisco',SFO:'San Francisco',KOAK:'Oakland',KSJC:'San Jose',KLAX:'Los Angeles',LAX:'Los Angeles',
+  KVNY:'Van Nuys',KBUR:'Burbank',KSNA:'Santa Ana',KLGB:'Long Beach',KSAN:'San Diego',KSMF:'Sacramento',
+  KSBA:'Santa Barbara',KMRY:'Monterey',KSTS:'Santa Rosa',KPAO:'Palo Alto',KSQL:'San Carlos',
+  KRNO:'Reno',KLAS:'Las Vegas',KPHX:'Phoenix',KSDL:'Scottsdale',KDEN:'Denver',KAPA:'Centennial',
+  KASE:'Aspen',KSLC:'Salt Lake City',KPVU:'Provo',KSEA:'Seattle',KBFI:'Boeing Field',KPDX:'Portland',
+  KMSO:'Missoula',KBZN:'Bozeman',KJAC:'Jackson Hole',KTEB:'Teterboro',KJFK:'New York',KLGA:'New York',
+  KEWR:'Newark',KHPN:'White Plains',KBOS:'Boston',KBED:'Bedford',KIAD:'Washington Dulles',KDCA:'Washington',
+  KBWI:'Baltimore',KPHL:'Philadelphia',KORD:'Chicago',KMDW:'Chicago Midway',KPWK:'Chicago Executive',
+  KDFW:'Dallas',KDAL:'Dallas Love',KADS:'Addison',KHOU:'Houston Hobby',KIAH:'Houston',KAUS:'Austin',
+  KSAT:'San Antonio',KSTL:'St Louis',KSUS:'Spirit of St Louis',KMIA:'Miami',KOPF:'Opa-locka',KFLL:'Fort Lauderdale',
+  KPBI:'West Palm Beach',KTPA:'Tampa',KMCO:'Orlando',KATL:'Atlanta',KPDK:'Atlanta Peachtree',KCLT:'Charlotte',
+  KBNA:'Nashville',KMEM:'Memphis',KCOS:'Colorado Springs',PHNL:'Honolulu',PHOG:'Kahului',PANC:'Anchorage',
+  CYVR:'Vancouver',CYYZ:'Toronto',CYUL:'Montreal',CYYC:'Calgary',MMMX:'Mexico City',MMTO:'Toluca',
+  MMUN:'Cancun',MMSD:'Los Cabos',EGLL:'London',EGGW:'Luton',EGKB:'Biggin Hill',LFPB:'Paris Le Bourget',
+  LSZH:'Zurich',LSGG:'Geneva',LEPA:'Palma',LEMD:'Madrid',LEBL:'Barcelona',EHAM:'Amsterdam',OMDB:'Dubai',
+  VHHH:'Hong Kong',RJTT:'Tokyo Haneda',WSSS:'Singapore',YSSY:'Sydney',NZAA:'Auckland',SBGR:'Sao Paulo'
+};
+function isIntlCode(code) {
+  if (!code) return false;
+  var c = String(code).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!c) return false;
+  if (c.length === 4 && (c.charAt(0) === 'K' || c.charAt(0) === 'P')) return false;
+  if (c.length === 3) return false;
+  if (c.length >= 2 && c.charAt(0) >= '0' && c.charAt(0) <= '9') return false;
+  if (c.length === 4) return true;
+  return false;
+}
+function lookupAptCity(code) {
+  if (!code) return '';
+  var c = String(code).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (APT_CITY[c]) return APT_CITY[c];
+  if (c.length === 4 && (c.charAt(0) === 'K' || c.charAt(0) === 'C' || c.charAt(0) === 'P') && APT_CITY[c.substring(1)]) return APT_CITY[c.substring(1)];
+  return '';
+}
+function enrichMovementLoc(f, kind) {
+  if (!f) return f;
+  var loc = kind === 'arrivals' ? (f.from || '') : (f.to || '');
+  if (!loc) return f;
+  var intl = !!f.intl || isIntlCode(loc);
+  f.intl = intl;
+  var city = lookupAptCity(loc);
+  if (intl) {
+    if (!f.country) f.country = city || '';
+    if (!f.city && city) f.city = city;
+  } else if (!f.city && city) {
+    f.city = city;
+  }
+  return f;
+}
+
 async function buildBoard(kind) {
   var m = movements[kind];
   var list = [];
@@ -1130,6 +1186,7 @@ async function buildBoard(kind) {
   entries = Array.from(m.values());
   for (var i = 0; i < entries.length; i++) {
     var f = Object.assign({}, entries[i]);
+    f = enrichMovementLoc(f, kind);
     // Drop expired diverts (also pruned above; belt-and-suspenders for in-flight hold).
     if (f.divertAt && (Date.now() - f.divertAt) > DIVERT_HOLD_MS) continue;
     // Safety net: never surface airline/airliner rows on Signature boards regardless of source.

@@ -74,19 +74,19 @@ body{font-family:var(--sans);background:var(--b0);color:var(--t1);min-height:100
    icon columns (OP, STATUS) use fixed pixel widths because they hold same-size pills regardless
    of how wide the table is. fr-sized pill columns get visually huge on wide screens for no
    reason (an "NJ" pill doesn't need 80px). */
-.cols{display:grid;grid-template-columns:1.1fr 28px 56px 1.05fr 1.05fr .95fr .95fr .8fr .8fr .55fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
-.cols.ca-done{display:grid;grid-template-columns:1.1fr 28px 56px 1.05fr 1.05fr .95fr .95fr .85fr .8fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
-.cols.cd-done{display:grid;grid-template-columns:1.1fr 28px 56px 1.05fr 1.05fr .95fr .85fr .8fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
-.cols.ca{grid-template-columns:1.1fr 28px 56px 1.05fr 1.05fr .95fr .95fr .8fr .8fr .55fr}
-.cols.cd{grid-template-columns:1.1fr 28px 56px 1.05fr 1.05fr .95fr .8fr .8fr}
+.cols{display:grid;grid-template-columns:0.52fr 28px 52px 1.15fr 1.35fr .95fr .95fr .8fr .8fr .55fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
+.cols.ca-done{display:grid;grid-template-columns:0.52fr 28px 52px 1.15fr 1.35fr .95fr .95fr .85fr .8fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
+.cols.cd-done{display:grid;grid-template-columns:0.52fr 28px 52px 1.15fr 1.35fr .95fr .85fr .8fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
+.cols.ca{grid-template-columns:0.52fr 28px 52px 1.15fr 1.35fr .95fr .95fr .8fr .8fr .55fr}
+.cols.cd{grid-template-columns:0.52fr 28px 52px 1.15fr 1.35fr .95fr .8fr .8fr}
 .cols span:first-child{text-align:left;padding-left:16px}
 .bb{flex:1;padding:5px 8px}
-.fr{display:grid;grid-template-columns:1.1fr 28px 56px 1.05fr 1.05fr .95fr .95fr .8fr .8fr .55fr;gap:5px;align-items:center;padding:9px 8px;background:var(--b1);border:1px solid var(--bd);border-radius:7px;margin-bottom:3px;cursor:pointer;transition:all .12s;box-shadow:0 1px 2px rgba(0,0,0,.02);font-size:14px}
+.fr{display:grid;grid-template-columns:0.52fr 28px 52px 1.15fr 1.35fr .95fr .95fr .8fr .8fr .55fr;gap:5px;align-items:center;padding:9px 8px;background:var(--b1);border:1px solid var(--bd);border-radius:7px;margin-bottom:3px;cursor:pointer;transition:all .12s;box-shadow:0 1px 2px rgba(0,0,0,.02);font-size:14px}
 .fr > *{min-width:0;overflow:hidden}
 /* .fr > .fi keeps overflow:hidden from the parent rule above — badges wrap inside the cell */
-.fr.arr-done{grid-template-columns:1.1fr 28px 56px 1.05fr 1.05fr .95fr .95fr .85fr .8fr}
-.fr.dep{grid-template-columns:1.1fr 28px 56px 1.05fr 1.05fr .95fr .8fr .8fr}
-.fr.dep-simple{grid-template-columns:1.1fr 28px 56px 1.05fr 1.05fr .95fr .85fr .8fr}
+.fr.arr-done{grid-template-columns:0.52fr 28px 52px 1.15fr 1.35fr .95fr .95fr .85fr .8fr}
+.fr.dep{grid-template-columns:0.52fr 28px 52px 1.15fr 1.35fr .95fr .8fr .8fr}
+.fr.dep-simple{grid-template-columns:0.52fr 28px 52px 1.15fr 1.35fr .95fr .85fr .8fr}
 /* OP column cell: holds the operator brand pill (NJ/FX/BA/etc), centered, no overflow.
    Empty cells render as a clean gap rather than collapsing the column. */
 .fr > .fop{display:flex;align-items:center;justify-content:center;overflow:visible}
@@ -104,7 +104,7 @@ body{font-family:var(--sans);background:var(--b0);color:var(--t1);min-height:100
 .fr.dep-ground{background:rgba(220,38,38,.02);border-color:rgba(220,38,38,.1)}
 .fr.dep-gone{background:rgba(220,38,38,.04);border-color:rgba(220,38,38,.12)}
 .chk{width:16px;height:16px;accent-color:var(--green);cursor:pointer;margin:0 auto;display:block}
-.fi{font-family:var(--mono);font-weight:800;font-size:19px;color:var(--cyan);line-height:1.2;position:relative;padding-left:16px;min-width:0;overflow:hidden;text-overflow:clip;display:flex;flex-wrap:wrap;align-items:baseline;column-gap:4px;row-gap:2px}
+.fi{font-family:var(--mono);font-weight:800;font-size:17px;color:var(--cyan);line-height:1.15;position:relative;padding-left:8px;min-width:0;overflow:hidden;text-overflow:clip;display:flex;flex-wrap:wrap;align-items:baseline;column-gap:4px;row-gap:2px}
 .fi>*{flex-shrink:0}
 
 .spot-dd{z-index:10000;background:var(--b1);border:1px solid var(--bd);border-radius:4px;box-shadow:0 4px 12px rgba(0,0,0,.3);padding:4px 0;overflow-y:auto;min-width:140px}
@@ -120,9 +120,13 @@ body{font-family:var(--sans);background:var(--b0);color:var(--t1);min-height:100
 .ft{font-family:var(--mono);font-size:17px;font-weight:700;color:var(--t1);text-align:center;line-height:1.2;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:0;overflow:hidden}
 .ft .sub{font-size:10px;font-weight:500;color:var(--t3);display:block}
 .ff{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--t2);text-align:center;line-height:1.2;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:0;overflow:hidden}
-.ff.intl{color:var(--red);font-weight:700}
+.fr.intl-row{background:linear-gradient(90deg,rgba(220,38,38,.09),rgba(220,38,38,.02));border-color:rgba(220,38,38,.38);box-shadow:inset 3px 0 0 #dc2626}
+.fr.intl-row:hover{background:linear-gradient(90deg,rgba(220,38,38,.14),rgba(220,38,38,.04))}
+.fr.intl-row.arr-active{background:linear-gradient(90deg,rgba(220,38,38,.1),rgba(37,99,235,.03));border-color:rgba(220,38,38,.4)}
+.intl-badge{display:inline-block;background:#dc2626;color:#fff;font-size:8px;font-weight:900;padding:1px 5px;border-radius:3px;letter-spacing:.5px;line-height:1;margin-left:3px;vertical-align:middle;box-shadow:0 0 6px rgba(220,38,38,.35)}
+.ff.intl{color:var(--red);font-weight:800}
+.ff.intl .sub{color:var(--red);font-weight:600;opacity:.85;font-size:9px}
 .ff .sub{font-size:10px;font-weight:400;color:var(--t3);display:block}
-.ff.intl .sub{color:var(--red);font-weight:500;opacity:.7;font-size:8px}
 .fm{font-family:var(--mono);font-size:14px;font-weight:600;color:var(--t2);text-align:center;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:0;overflow:hidden}
 .fe{font-family:var(--mono);font-size:14px;font-weight:700;text-align:center;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:0;overflow:hidden}
 .fe.soon{color:var(--green)}.fe.mid{color:var(--amber)}.fe.far{color:var(--t3)}
@@ -204,15 +208,15 @@ img.emoji{height:1em;width:1em;margin:0 .05em 0 .1em;vertical-align:-0.1em;displ
   /* Mobile: same OP=24px / STATUS=44px fixed-width strategy. Slightly smaller than desktop
      because mobile pills also shrink with the smaller font-size. Tight 2px gap so columns
      don't pull apart on a phone screen. */
-  .cols.ca,.cols.cd{font-size:7.5px;padding:6px 6px;gap:2px;grid-template-columns:1.1fr 24px 44px .7fr .7fr .55fr .55fr .5fr .7fr .4fr!important}
-  .cols.cd{grid-template-columns:1.1fr 24px 44px .7fr .7fr .55fr .5fr .7fr!important}
-  .cols.ca-done{grid-template-columns:1.1fr 24px 44px .7fr .7fr .55fr .55fr .5fr .7fr!important}
-  .cols.cd-done{grid-template-columns:1.1fr 24px 44px .7fr .7fr .55fr .5fr .7fr!important}
+  .cols.ca,.cols.cd{font-size:7.5px;padding:6px 6px;gap:2px;grid-template-columns:0.5fr 24px 44px .8fr .95fr .55fr .55fr .5fr .7fr .4fr!important}
+  .cols.cd{grid-template-columns:0.5fr 24px 44px .8fr .95fr .55fr .5fr .7fr!important}
+  .cols.ca-done{grid-template-columns:0.5fr 24px 44px .8fr .95fr .55fr .55fr .5fr .7fr!important}
+  .cols.cd-done{grid-template-columns:0.5fr 24px 44px .8fr .95fr .55fr .5fr .7fr!important}
   .fr{font-size:10px!important;padding:6px 6px!important;gap:2px!important}
-  .fr.ar{grid-template-columns:1.1fr 24px 44px .7fr .7fr .55fr .55fr .5fr .7fr .4fr!important}
-  .fr.arr-done{grid-template-columns:1.1fr 24px 44px .7fr .7fr .55fr .55fr .5fr .7fr!important}
-  .fr.dep,.fr.dep-ground,.fr.dep-gone{grid-template-columns:1.1fr 24px 44px .7fr .7fr .55fr .5fr .7fr!important}
-  .fr.dep-simple{grid-template-columns:1.1fr 24px 44px .7fr .7fr .55fr .5fr .7fr!important}
+  .fr.ar{grid-template-columns:0.5fr 24px 44px .8fr .95fr .55fr .55fr .5fr .7fr .4fr!important}
+  .fr.arr-done{grid-template-columns:0.5fr 24px 44px .8fr .95fr .55fr .55fr .5fr .7fr!important}
+  .fr.dep,.fr.dep-ground,.fr.dep-gone{grid-template-columns:0.5fr 24px 44px .8fr .95fr .55fr .5fr .7fr!important}
+  .fr.dep-simple{grid-template-columns:0.5fr 24px 44px .8fr .95fr .55fr .5fr .7fr!important}
   .fi{font-size:11px!important}
   .ft{font-size:9px!important}
   .ff{font-size:9px!important}
@@ -250,14 +254,14 @@ img.emoji{height:1em;width:1em;margin:0 .05em 0 .1em;vertical-align:-0.1em;displ
   .cols span:first-child,.fi{padding-left:6px!important}
   .fr > .fop,.fr > .fst{overflow:visible!important}
   .fr > .fst > span,.fr > .fop > span{font-size:7px!important;padding:1px 3px!important;letter-spacing:.2px!important}
-  .cols.ca,.cols.cd{grid-template-columns:1.1fr 22px 40px .7fr .7fr .55fr .55fr .5fr .7fr .4fr!important}
-  .cols.cd{grid-template-columns:1.1fr 22px 40px .7fr .7fr .55fr .5fr .7fr!important}
-  .cols.ca-done{grid-template-columns:1.1fr 22px 40px .7fr .7fr .55fr .55fr .5fr .7fr!important}
-  .cols.cd-done{grid-template-columns:1.1fr 22px 40px .7fr .7fr .55fr .5fr .7fr!important}
-  .fr.ar{grid-template-columns:1.1fr 22px 40px .7fr .7fr .55fr .55fr .5fr .7fr .4fr!important}
-  .fr.arr-done{grid-template-columns:1.1fr 22px 40px .7fr .7fr .55fr .55fr .5fr .7fr!important}
-  .fr.dep,.fr.dep-ground,.fr.dep-gone{grid-template-columns:1.1fr 22px 40px .7fr .7fr .55fr .5fr .7fr!important}
-  .fr.dep-simple{grid-template-columns:1.1fr 22px 40px .7fr .7fr .55fr .5fr .7fr!important}
+  .cols.ca,.cols.cd{grid-template-columns:0.48fr 22px 40px .8fr .95fr .55fr .55fr .5fr .7fr .4fr!important}
+  .cols.cd{grid-template-columns:0.48fr 22px 40px .8fr .95fr .55fr .5fr .7fr!important}
+  .cols.ca-done{grid-template-columns:0.48fr 22px 40px .8fr .95fr .55fr .55fr .5fr .7fr!important}
+  .cols.cd-done{grid-template-columns:0.48fr 22px 40px .8fr .95fr .55fr .5fr .7fr!important}
+  .fr.ar{grid-template-columns:0.48fr 22px 40px .8fr .95fr .55fr .55fr .5fr .7fr .4fr!important}
+  .fr.arr-done{grid-template-columns:0.48fr 22px 40px .8fr .95fr .55fr .55fr .5fr .7fr!important}
+  .fr.dep,.fr.dep-ground,.fr.dep-gone{grid-template-columns:0.48fr 22px 40px .8fr .95fr .55fr .5fr .7fr!important}
+  .fr.dep-simple{grid-template-columns:0.48fr 22px 40px .8fr .95fr .55fr .5fr .7fr!important}
   /* Map height shrinks more on phones so the boards aren't pushed below the fold */
   #map{height:200px;min-height:200px}
   /* HUD cards wrap tighter */
@@ -270,14 +274,14 @@ img.emoji{height:1em;width:1em;margin:0 .05em 0 .1em;vertical-align:-0.1em;displ
    FROM/SPOT/STATUS up by a few px so longer values like "2nd Line 4" or "🇺🇸 KSDL" don't overflow.
    Without this, the SPOT column at 47px would clip on rows with multi-line spot names. */
 @media (min-width: 430px) and (max-width: 499px){
-  .cols.ca,.cols.cd{font-size:8px;grid-template-columns:1.05fr 24px 46px .65fr .8fr .55fr .55fr .5fr .85fr .4fr!important}
-  .cols.cd{grid-template-columns:1.05fr 24px 46px .65fr .8fr .55fr .5fr .85fr!important}
-  .cols.ca-done{grid-template-columns:1.05fr 24px 46px .65fr .8fr .55fr .55fr .5fr .85fr!important}
-  .cols.cd-done{grid-template-columns:1.05fr 24px 46px .65fr .8fr .55fr .5fr .85fr!important}
-  .fr.ar{grid-template-columns:1.05fr 24px 46px .65fr .8fr .55fr .55fr .5fr .85fr .4fr!important}
-  .fr.arr-done{grid-template-columns:1.05fr 24px 46px .65fr .8fr .55fr .55fr .5fr .85fr!important}
-  .fr.dep,.fr.dep-ground,.fr.dep-gone{grid-template-columns:1.05fr 24px 46px .65fr .8fr .55fr .5fr .85fr!important}
-  .fr.dep-simple{grid-template-columns:1.05fr 24px 46px .65fr .8fr .55fr .5fr .85fr!important}
+  .cols.ca,.cols.cd{font-size:8px;grid-template-columns:0.5fr 24px 46px .75fr .95fr .55fr .55fr .5fr .85fr .4fr!important}
+  .cols.cd{grid-template-columns:0.5fr 24px 46px .75fr .95fr .55fr .5fr .85fr!important}
+  .cols.ca-done{grid-template-columns:0.5fr 24px 46px .75fr .95fr .55fr .55fr .5fr .85fr!important}
+  .cols.cd-done{grid-template-columns:0.5fr 24px 46px .75fr .95fr .55fr .5fr .85fr!important}
+  .fr.ar{grid-template-columns:0.5fr 24px 46px .75fr .95fr .55fr .55fr .5fr .85fr .4fr!important}
+  .fr.arr-done{grid-template-columns:0.5fr 24px 46px .75fr .95fr .55fr .55fr .5fr .85fr!important}
+  .fr.dep,.fr.dep-ground,.fr.dep-gone{grid-template-columns:0.5fr 24px 46px .75fr .95fr .55fr .5fr .85fr!important}
+  .fr.dep-simple{grid-template-columns:0.5fr 24px 46px .75fr .95fr .55fr .5fr .85fr!important}
   /* Pills can be slightly larger on Pro Max — 8px font reads better at this width */
   .fr > .fst > span,.fr > .fop > span{font-size:7.5px!important;padding:1px 4px!important}
   /* Map gets back some height since we have more vertical space too */
@@ -286,12 +290,12 @@ img.emoji{height:1em;width:1em;margin:0 .05em 0 .1em;vertical-align:-0.1em;displ
 @media (max-width: 429px){
   .fr{font-size:11px!important;padding:6px 5px!important}
   .fi{font-size:13px!important}
-  .cols.ca,.cols.cd{grid-template-columns:1fr 20px 36px .7fr .7fr .5fr .5fr .5fr .65fr .35fr!important;font-size:8px!important}
-  .cols.cd{grid-template-columns:1fr 20px 36px .7fr .7fr .5fr .5fr .65fr!important}
-  .fr.ar{grid-template-columns:1fr 20px 36px .7fr .7fr .5fr .5fr .5fr .65fr .35fr!important}
-  .fr.dep,.fr.dep-ground,.fr.dep-gone{grid-template-columns:1fr 20px 36px .7fr .7fr .5fr .5fr .65fr!important}
-  .fr.arr-done{grid-template-columns:1fr 20px 36px .7fr .7fr .5fr .5fr .5fr .65fr!important}
-  .fr.dep-simple{grid-template-columns:1fr 20px 36px .7fr .7fr .5fr .5fr .65fr!important}
+  .cols.ca,.cols.cd{grid-template-columns:0.45fr 20px 36px .8fr .95fr .5fr .5fr .5fr .65fr .35fr!important;font-size:8px!important}
+  .cols.cd{grid-template-columns:0.45fr 20px 36px .8fr .95fr .5fr .5fr .65fr!important}
+  .fr.ar{grid-template-columns:0.45fr 20px 36px .8fr .95fr .5fr .5fr .5fr .65fr .35fr!important}
+  .fr.dep,.fr.dep-ground,.fr.dep-gone{grid-template-columns:0.45fr 20px 36px .8fr .95fr .5fr .5fr .65fr!important}
+  .fr.arr-done{grid-template-columns:0.45fr 20px 36px .8fr .95fr .5fr .5fr .5fr .65fr!important}
+  .fr.dep-simple{grid-template-columns:0.45fr 20px 36px .8fr .95fr .5fr .5fr .65fr!important}
 }
 
 </style>
@@ -979,6 +983,106 @@ function isGA(cs,cat){
   return true;
 }
 
+// Airport city / location names under ICAO/IATA on the board. Covers common SFO GA
+// origins/destinations plus frequent international bizjet cities. Fallbacks: US Kxxx→
+// IATA-style city when known; intl codes get a city (or country) so the sub-line is never blank.
+var APT_CITY={
+KSFO:'San Francisco',SFO:'San Francisco',KOAK:'Oakland',OAK:'Oakland',KSJC:'San Jose',SJC:'San Jose',
+KLAX:'Los Angeles',LAX:'Los Angeles',KVNY:'Van Nuys',VNY:'Van Nuys',KBUR:'Burbank',BUR:'Burbank',
+KSNA:'Santa Ana',SNA:'Santa Ana',KLGB:'Long Beach',LGB:'Long Beach',KSAN:'San Diego',SAN:'San Diego',
+KSMF:'Sacramento',SMF:'Sacramento',KSBA:'Santa Barbara',SBA:'Santa Barbara',KMRY:'Monterey',MRY:'Monterey',
+KSTS:'Santa Rosa',STS:'Santa Rosa',KPAO:'Palo Alto',PAO:'Palo Alto',KSQL:'San Carlos',SQL:'San Carlos',
+KHAF:'Half Moon Bay',HAF:'Half Moon Bay',KWVI:'Watsonville',WVI:'Watsonville',KCCR:'Concord',CCR:'Concord',
+KLVK:'Livermore',LVK:'Livermore',KHWD:'Hayward',HWD:'Hayward',KMOD:'Modesto',MOD:'Modesto',
+KFAT:'Fresno',FAT:'Fresno',KBFL:'Bakersfield',BFL:'Bakersfield',KSBP:'San Luis Obispo',SBP:'San Luis Obispo',
+KRNO:'Reno',RNO:'Reno',KLAS:'Las Vegas',LAS:'Las Vegas',KHND:'Henderson',HND:'Henderson',KVGT:'North Las Vegas',
+KPHX:'Phoenix',PHX:'Phoenix',KSDL:'Scottsdale',SDL:'Scottsdale',KDVT:'Phoenix Deer Valley',KNYL:'Yuma',
+KTUS:'Tucson',TUS:'Tucson',KABQ:'Albuquerque',ABQ:'Albuquerque',KDEN:'Denver',DEN:'Denver',KAPA:'Centennial',APA:'Centennial',
+KBJC:'Rocky Mountain',ASE:'Aspen',KASE:'Aspen',KEGE:'Eagle',EGE:'Eagle',KGJT:'Grand Junction',
+KSLC:'Salt Lake City',SLC:'Salt Lake City',KPVU:'Provo',PVU:'Provo',KOGD:'Ogden',
+KSEA:'Seattle',SEA:'Seattle',KBFI:'Boeing Field',BFI:'Boeing Field',KPAE:'Everett',PAE:'Everett',
+KPDX:'Portland',PDX:'Portland',KBOI:'Boise',BOI:'Boise',KGEG:'Spokane',GEG:'Spokane',
+KMSO:'Missoula',MSO:'Missoula',KBZN:'Bozeman',BZN:'Bozeman',KJAC:'Jackson Hole',JAC:'Jackson Hole',
+KBIL:'Billings',KFCA:'Kalispell',KGPI:'Kalispell',
+KPDK:'Atlanta Peachtree',ATL:'Atlanta',KATL:'Atlanta',KCLT:'Charlotte',CLT:'Charlotte',KRDU:'Raleigh',
+KMIA:'Miami',MIA:'Miami',KOPF:'Opa-locka',OPF:'Opa-locka',KFLL:'Fort Lauderdale',FLL:'Fort Lauderdale',
+KPBI:'West Palm Beach',PBI:'West Palm Beach',KTPA:'Tampa',TPA:'Tampa',KMCO:'Orlando',ORL:'Orlando',
+KJFK:'New York',JFK:'New York',KLGA:'New York',LGA:'New York',KEWR:'Newark',EWR:'Newark',
+KTEB:'Teterboro',TEB:'Teterboro',KHPN:'White Plains',HPN:'White Plains',KISP:'Islip',
+KBOS:'Boston',BOS:'Boston',KBED:'Bedford',BED:'Bedford',KBVY:'Beverly',
+KIAD:'Washington Dulles',IAD:'Washington',KDCA:'Washington',DCA:'Washington',KADW:'Andrews',
+KBWI:'Baltimore',BWI:'Baltimore',KPHL:'Philadelphia',PHL:'Philadelphia',KPNE:'Northeast Philly',
+KORD:'Chicago',ORD:'Chicago',KMDW:'Chicago Midway',MDW:'Chicago',KPWK:'Chicago Executive',PWK:'Chicago',
+KDTW:'Detroit',DTW:'Detroit',KMKE:'Milwaukee',KMSP:'Minneapolis',MSP:'Minneapolis',
+KDFW:'Dallas',DFW:'Dallas',KDAL:'Dallas Love',DAL:'Dallas',KADS:'Addison',ADS:'Addison',
+KHOU:'Houston Hobby',HOU:'Houston',KIAH:'Houston',IAH:'Houston',KSGR:'Sugar Land',
+KAUS:'Austin',AUS:'Austin',KSAT:'San Antonio',SAT:'San Antonio',KELP:'El Paso',
+KSTL:'St Louis',STL:'St Louis',KMCI:'Kansas City',KMKC:'Kansas City',KOMA:'Omaha',
+KMEM:'Memphis',MEM:'Memphis',KBNA:'Nashville',BNA:'Nashville',KSDF:'Louisville',
+KCVG:'Cincinnati',KCLE:'Cleveland',KCMH:'Columbus',KIND:'Indianapolis',
+KCOS:'Colorado Springs',COS:'Colorado Springs',KPUB:'Pueblo',
+KSUS:'Spirit of St Louis',SUS:'St Louis',KHXD:'Hilton Head',KSAV:'Savannah',
+KCHS:'Charleston',KJAX:'Jacksonville',KTLH:'Tallahassee',KPNS:'Pensacola',
+KRIC:'Richmond',KORF:'Norfolk',KROA:'Roanoke',KGSO:'Greensboro',
+// Hawaii / Alaska / territories
+PHNL:'Honolulu',HNL:'Honolulu',PHOG:'Kahului',OGG:'Kahului',PHKO:'Kona',KOA:'Kona',
+PANC:'Anchorage',ANC:'Anchorage',PAFA:'Fairbanks',PAJN:'Juneau',
+TJIG:'San Juan',TJSJ:'San Juan',SJU:'San Juan',
+// Canada
+CYVR:'Vancouver',YVR:'Vancouver',CYYZ:'Toronto',YYZ:'Toronto',CYUL:'Montreal',YUL:'Montreal',
+CYYC:'Calgary',YYC:'Calgary',CYEG:'Edmonton',CYOW:'Ottawa',CYYJ:'Victoria',
+CZBB:'Boundary Bay',CYXX:'Abbotsford',
+// Mexico / Caribbean
+MMMX:'Mexico City',MEX:'Mexico City',MMTO:'Toluca',TLC:'Toluca',MMGL:'Guadalajara',
+MMUN:'Cancun',CUN:'Cancun',MMSD:'Los Cabos',SJD:'Los Cabos',MMPR:'Puerto Vallarta',
+MYNN:'Nassau',TNCM:'St Maarten',TBPB:'Barbados',MKJP:'Kingston',MDPC:'Punta Cana',
+// Europe / Middle East / Asia common bizjet
+EGLL:'London',LHR:'London',EGGW:'Luton',LTN:'Luton',EGSS:'Stansted',EGKB:'Biggin Hill',BQH:'Biggin Hill',
+LFPB:'Paris Le Bourget',LBG:'Le Bourget',LFPO:'Paris Orly',LFPG:'Paris CDG',
+EDDM:'Munich',EDDF:'Frankfurt',EDDB:'Berlin',EDDH:'Hamburg',LSZH:'Zurich',ZRH:'Zurich',
+LSGG:'Geneva',GVA:'Geneva',LIRF:'Rome',LIML:'Milan',LEMD:'Madrid',LEBL:'Barcelona',
+LEPA:'Palma',PMI:'Palma',LEMG:'Malaga',EHAM:'Amsterdam',AMS:'Amsterdam',EBBR:'Brussels',
+EKCH:'Copenhagen',ENGM:'Oslo',ESSA:'Stockholm',EFHK:'Helsinki',EIDW:'Dublin',LPPT:'Lisbon',
+LGAV:'Athens',LTBA:'Istanbul',UUEE:'Moscow',ULLI:'St Petersburg',
+OMDB:'Dubai',DXB:'Dubai',OMSJ:'Sharjah',OMAA:'Abu Dhabi',OTHH:'Doha',OEJN:'Jeddah',
+VHHH:'Hong Kong',HKG:'Hong Kong',RJTT:'Tokyo Haneda',RJAA:'Tokyo Narita',RKSI:'Seoul',
+WSSS:'Singapore',SIN:'Singapore',YSSY:'Sydney',YMML:'Melbourne',NZAA:'Auckland',
+SBGR:'Sao Paulo',SBGL:'Rio',SCEL:'Santiago',SKBO:'Bogota',SEQM:'Quito',SPJC:'Lima'
+};
+function isIntlCode(code){
+  if(!code)return false;
+  var c=String(code).toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(!c)return false;
+  if(c.length===4&&(c.charAt(0)==='K'||c.charAt(0)==='P'))return false;
+  if(c.length===3)return false;
+  if(c.length>=2&&c.charAt(0)>='0'&&c.charAt(0)<='9')return false;
+  if(c.length===4)return true;
+  return false;
+}
+function lookupAptCity(code){
+  if(!code)return'';
+  var c=String(code).toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(APT_CITY[c])return APT_CITY[c];
+  // KLAX → try LAX
+  if(c.length===4&&(c.charAt(0)==='K'||c.charAt(0)==='C'||c.charAt(0)==='P')&&APT_CITY[c.substring(1)])return APT_CITY[c.substring(1)];
+  return'';
+}
+function enrichFlightLoc(f,cls){
+  if(!f)return;
+  var loc=cls==='ar'?safeStr(f.from):safeStr(f.to);
+  if(!loc)return;
+  var intl=!!f.intl||isIntlCode(loc);
+  f.intl=intl;
+  var city=lookupAptCity(loc);
+  if(intl){
+    if(!f.country)f.country=city||f.country||'';
+    // Keep a city for tooltips even on intl when we know the place name
+    if(!f.city&&city)f.city=city;
+  }else if(!f.city&&city){
+    f.city=city;
+  }
+}
+
 var APT={KSFO:{lat:37.62818,lon:-122.38487,n:'San Francisco Intl'},KJFK:{lat:40.641,lon:-73.778,n:'JFK Intl'},KLAX:{lat:33.943,lon:-118.408,n:'Los Angeles Intl'},KORD:{lat:41.974,lon:-87.907,n:'Chicago OHare'},KDEN:{lat:39.856,lon:-104.674,n:'Denver Intl'},KSEA:{lat:47.450,lon:-122.309,n:'Seattle-Tacoma'}};
 var airport='KSFO',radius=60;
 var leafMap,markers={},allAC=[],gaAC=[],trackHistory={},trackLines={},faMapSet={},identToMarkerId={};
@@ -994,7 +1098,8 @@ function buildFaMapSet(){
     for(var i=0;i<arr.length;i++){
       var f=arr[i];
       if(f.arrived){var at=f.arriveISO?new Date(f.arriveISO).getTime():0;if(at>0&&(now2-at)>300000)continue;}
-      var info={type:'arr',ident:f.ident,callsign:f.callsign,acType:f.type,from:f.from,city:f.city,country:f.country,to:'KSFO',depart:f.depart,arrive:f.arrive,departISO:f.departISO,arriveISO:f.arriveISO};
+      enrichFlightLoc(f,'ar');
+      var info={type:'arr',ident:f.ident,callsign:f.callsign,acType:f.type,from:f.from,city:f.city,country:f.country,intl:f.intl,to:'KSFO',depart:f.depart,arrive:f.arrive,departISO:f.departISO,arriveISO:f.arriveISO};
       var fIdent=f.ident?String(f.ident).toUpperCase():'';
       var fCall=f.callsign?String(f.callsign).toUpperCase():'';
       if(fIdent){faMapSet[fIdent]=info;faMapSet[fIdent.replace(/[^A-Z0-9]/g,'')]=info;}
@@ -1003,7 +1108,8 @@ function buildFaMapSet(){
     for(var i=0;i<dep.length;i++){
       var f=dep[i];
       if(f.departed){var dt=f.departISO?new Date(f.departISO).getTime():0;if(dt>0&&(now2-dt)>300000)continue;}
-      var info2={type:'dep',ident:f.ident,callsign:f.callsign,acType:f.type,from:'KSFO',to:f.to,city:f.city,country:f.country,depart:f.depart,arrive:f.arrive,departISO:f.departISO,arriveISO:f.arriveISO};
+      enrichFlightLoc(f,'de');
+      var info2={type:'dep',ident:f.ident,callsign:f.callsign,acType:f.type,from:'KSFO',to:f.to,city:f.city,country:f.country,intl:f.intl,depart:f.depart,arrive:f.arrive,departISO:f.departISO,arriveISO:f.arriveISO};
       var dIdent=f.ident?String(f.ident).toUpperCase():'';
       var dCall=f.callsign?String(f.callsign).toUpperCase():'';
       if(dIdent&&!faMapSet[dIdent]){faMapSet[dIdent]=info2;faMapSet[dIdent.replace(/-/g,'')]=info2;}
@@ -1648,6 +1754,10 @@ function drawMap(ac){
     console.log('[MAP] provisional nearby (no board matches yet):',filtered.length);
   }
   console.log('[MAP] arrival matches shown:',filtered.length,'of',ac.length,'ADS-B targets');
+  // Closest-to-KSFO first: nearby traffic paints above distant, and any hover/order follows range.
+  filtered.sort(function(a,b){
+    return nmDist(sfoLat,sfoLon,a.lat,a.lon)-nmDist(sfoLat,sfoLon,b.lat,b.lon);
+  });
 
   var cur={};
   for(var i=0;i<filtered.length;i++)cur[filtered[i].id]=true;
@@ -1695,29 +1805,13 @@ function drawMap(ac){
     // because the drop-shadow handles contrast there).
     var iconStroke = _isDark ? '#0f172a' : '#fff';
     var iconSvg=svgIcon(acTypeForIcon,Math.round(h),col,sz,iconStroke);
-    // Label hierarchy for the map. Goal: the user scanning the IDENT column on the dashboard
-    // (which lists tail numbers like N944QS) should be able to spot the same tail on the map at
-    // a glance. Previously the label was the OpenSky callsign (EJA944 for a NetJets fractional),
-    // which doesn't appear anywhere in the dashboard table — so visual correlation was impossible.
-    //   Primary line: tail from FA (fi.ident), bold + larger + amber for arrivals
-    //   Secondary line: callsign in dim grey, only if it differs from the tail, plus alt/speed
+    // Markers only by default — no always-on text labels (they overlap near KSFO).
+    // Full plane info is shown on hover via Leaflet tooltip.
     var primaryLabel = (fi && fi.ident) ? safeStr(fi.ident).toUpperCase() : (cs || '?');
     var altSpd='';
-    if(!a.gnd&&alt>0)altSpd=(alt>=1000?Math.round(alt/100)+'00':''+alt)+'ft '+(a.kts||0)+'kt';
-    // Build the secondary line: callsign (if different from tail) followed by alt/speed.
-    // For unmatched GA where tail==cs, just show alt/speed. For fractionals, show callsign.
-    var subParts=[];
-    if(cs && cs.toUpperCase() !== primaryLabel) subParts.push(cs.toUpperCase());
-    if(altSpd) subParts.push(altSpd);
-    var subLine=subParts.join(' · ');
-    // Text shadow flips with theme: dark halo on dark base (so bright label pops), light halo on light
-    var _shadowColor = _isDark ? '#000' : '#fff';
-    var _shadow = '-1px 0 2px '+_shadowColor+',1px 0 2px '+_shadowColor+',0 -1px 2px '+_shadowColor+',0 1px 2px '+_shadowColor;
-    var _shadowSmall = '-1px 0 1px '+_shadowColor+',1px 0 1px '+_shadowColor;
-    var _subColor = _isDark ? '#cbd5e1' : '#64748b';
-    // Primary tail label is 12px bold (was 9px). It's the dominant on-map text now so the user
-    // can read tails from across the screen and match them against the IDENT column.
-    var icon=L.divIcon({className:'',html:'<div style="position:relative">'+iconSvg+'<div style="position:absolute;left:'+(sz+3)+'px;top:-3px;white-space:nowrap"><div style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:800;color:'+col+';text-shadow:'+_shadow+';line-height:1.1;letter-spacing:.3px">'+primaryLabel+'</div>'+(subLine?'<div style="font-family:JetBrains Mono,monospace;font-size:8px;font-weight:600;color:'+_subColor+';text-shadow:'+_shadowSmall+';line-height:1.15;margin-top:1px">'+subLine+'</div>':'')+'</div></div>',iconSize:[sz+90,sz+10],iconAnchor:[sz/2,sz/2]});
+    if(!a.gnd&&alt>0)altSpd=(alt>=1000?Math.round(alt/100)+'00':''+alt)+'ft · '+(a.kts||0)+'kt';
+    var icon=L.divIcon({className:'ac-marker',html:'<div style="width:'+sz+'px;height:'+sz+'px;line-height:0">'+iconSvg+'</div>',iconSize:[sz,sz],iconAnchor:[sz/2,sz/2]});
+    var distNmPlane=nmDist(sfoLat,sfoLon,a.lat,a.lon);
     // Track line
     if(!trackHistory[a.id])trackHistory[a.id]=[];
     var th=trackHistory[a.id];
@@ -1727,17 +1821,34 @@ function drawMap(ac){
       if(trackLines[a.id])trackLines[a.id].setLatLngs(th);
       else trackLines[a.id]=L.polyline(th,{color:col,weight:2,opacity:_trackOpacity,dashArray:'6,4'}).addTo(leafMap);
     }
-    // Rich popup
-    var popParts='<div style="font-family:monospace;font-size:9px;line-height:1.5;padding:2px">';
-    popParts+='<b style="color:'+col+'">'+cs+'</b>';
+    // Hover tooltip = full info; click popup kept as a secondary detail view.
+    var tip='<div style="font-family:JetBrains Mono,monospace;line-height:1.35">';
+    tip+='<div style="font-weight:800;font-size:11px;color:#111827">'+htmlEsc(primaryLabel)+'</div>';
+    if(cs && String(cs).toUpperCase()!==primaryLabel)tip+='<div style="font-size:9px;color:#475569">'+htmlEsc(String(cs).toUpperCase())+'</div>';
     if(fi){
-      popParts+=' <span style="color:#9ca3af;font-size:8px">'+(fi.acType||'')+'</span>';
-      popParts+='<br><span style="color:#9ca3af">'+((fi.from||'?')+' → '+(fi.to||'?'))+'</span>';
+      var route=((fi.from||'?')+' → '+(fi.to||'?'));
+      var cityBits=[];
+      if(fi.city)cityBits.push(fi.city);
+      if(fi.country)cityBits.push(fi.country);
+      tip+='<div style="font-size:9px;color:#334155;margin-top:2px">'+htmlEsc(fi.acType||'')+(fi.acType?' · ':'')+htmlEsc(route)+'</div>';
+      if(cityBits.length)tip+='<div style="font-size:8px;color:#64748b">'+htmlEsc(cityBits.join(' · '))+'</div>';
     }
-    popParts+='<br><span style="color:#9ca3af">'+(alt>0?alt.toLocaleString()+'ft':'GND')+' '+((a.kts||0))+'kts</span>';
-    popParts+='</div>';
-    if(markers[a.id]){markers[a.id].setLatLng([a.lat,a.lon]);markers[a.id].setIcon(icon);markers[a.id].setPopupContent(popParts);}
-    else{markers[a.id]=L.marker([a.lat,a.lon],{icon:icon}).addTo(leafMap).bindPopup(popParts);}
+    tip+='<div style="font-size:9px;color:#475569;margin-top:2px">'+(altSpd||(a.gnd?'GND':'—'))+' · '+distNmPlane.toFixed(1)+' nm</div>';
+    tip+='</div>';
+    var popParts=tip;
+    var zOff=Math.round(20000-distNmPlane*20); // closer aircraft stack above farther ones
+    if(markers[a.id]){
+      markers[a.id].setLatLng([a.lat,a.lon]);
+      markers[a.id].setIcon(icon);
+      markers[a.id].setZIndexOffset(zOff);
+      markers[a.id].setPopupContent(popParts);
+      if(markers[a.id].getTooltip())markers[a.id].setTooltipContent(tip);
+      else markers[a.id].bindTooltip(tip,{direction:'top',offset:[0,-(sz/2+4)],opacity:0.96,className:'ac-tip',sticky:true});
+    }else{
+      markers[a.id]=L.marker([a.lat,a.lon],{icon:icon,zIndexOffset:zOff}).addTo(leafMap)
+        .bindPopup(popParts)
+        .bindTooltip(tip,{direction:'top',offset:[0,-(sz/2+4)],opacity:0.96,className:'ac-tip',sticky:true});
+    }
     // Map callsign/ident to marker ID for click-to-zoom
     // NOTE: fi.ident, fi.callsign, fi.registration may be numbers or non-strings from FA JSON, so force String()
     var csUp=safeStr(a.cs).toUpperCase().replace(/ /g,'');
@@ -1899,15 +2010,24 @@ function mkRow(f,cls,done){
   // combined subRow that puts callsign + all badges (op, vip, med, qt) into this same line so
   // badges have a deterministic position instead of wrapping unpredictably at narrow widths.
   var csSub=f.callsign?'<span class="sub">'+callsignSafe+'</span>':'';
+  enrichFlightLoc(f,cls);
   var loc=cls==='ar'?safeStr(f.from):safeStr(f.to);
   var locSafe=htmlEsc(loc);
   var flag=getFlag(loc,HELI[f.type]?true:false);
   var locSub='';
-  if(f.intl&&f.country)locSub='<span class="sub">'+htmlEsc(f.country)+'</span>';
-  else if(f.city)locSub='<span class="sub">'+htmlEsc(f.city)+'</span>';
-  else if(!loc&&(f.fromNote||f.toNote))locSub='<span class="sub">'+htmlEsc(f.fromNote||f.toNote)+'</span>';
+  var cityName=f.city||lookupAptCity(loc)||'';
+  if(f.intl){
+    var intlSub=f.country||cityName||'';
+    if(intlSub)locSub='<span class="sub">'+htmlEsc(intlSub)+'</span>';
+  }else if(cityName){
+    locSub='<span class="sub">'+htmlEsc(cityName)+'</span>';
+  }else if(!loc&&(f.fromNote||f.toNote)){
+    locSub='<span class="sub">'+htmlEsc(f.fromNote||f.toNote)+'</span>';
+  }
   if(!loc){loc='—';locSafe='—';}
   var ffcls=f.intl?'ff intl':'ff';
+  var intlBadge=f.intl?'<span class="intl-badge" title="International">INTL</span>':'';
+  var intlRowCls=f.intl?' intl-row':'';
   // Type with model name sub
   var typeCode=safeStr(f.type);
   var typeCodeSafe=htmlEsc(typeCode);
@@ -1951,7 +2071,7 @@ function mkRow(f,cls,done){
       var depDoneCell='<span class="fm spot-click" data-plane="'+cidDone+'" style="font-size:9px;font-weight:700;color:var(--cyan);line-height:1.2;cursor:pointer">'+htmlEsc(depDoneSpot)+'</span>';
       var subRowDS=f.callsign?'<span class="sub" style="display:flex;flex-wrap:wrap;align-items:center;gap:3px;flex-basis:100%;width:100%">'+
         callsignSafe+'</span>':'';
-      return '<div class="fr dep-simple"><span class="fi zp" data-zp="'+cidDone+'">'+idSafe+subRowDS+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+medBadge+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+ffcls+'">'+flag+(flag?' ':'')+(locSafe||'—')+locSub+'</span><span class="fm">'+(departSafe||'—')+'</span><span class="fm">'+etaStr+'</span>'+depDoneCell+'</div>';
+      return '<div class="fr dep-simple'+intlRowCls+'"><span class="fi zp" data-zp="'+cidDone+'">'+idSafe+subRowDS+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+medBadge+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+ffcls+'">'+flag+(flag?' ':'')+(locSafe||'—')+intlBadge+locSub+'</span><span class="fm">'+(departSafe||'—')+'</span><span class="fm">'+etaStr+'</span>'+depDoneCell+'</div>';
     }
     // Spot for departure
     var isHD=HELI[f.type]?true:false;
@@ -1961,7 +2081,7 @@ function mkRow(f,cls,done){
     var depSpotCell='<span class="fm spot-click" data-plane="'+cid+'" style="font-size:9px;font-weight:700;color:var(--cyan);line-height:1.2;cursor:pointer">'+htmlEsc(depSpotText)+'</span>';
     var subRowD=f.callsign?'<span class="sub" style="display:flex;flex-wrap:wrap;align-items:center;gap:3px;flex-basis:100%;width:100%">'+
       callsignSafe+'</span>':'';
-    return '<div class="fr dep'+rowCls+'"><span class="fi zp" data-zp="'+cid+'">'+idSafe+subRowD+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+medBadge+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+ffcls+'">'+flag+(flag?' ':'')+(locSafe||'—')+locSub+'</span><span class="fm">'+(departSafe||'—')+'</span><span class="'+fecls+'">'+etaStr+'</span>'+depSpotCell+'</div>';
+    return '<div class="fr dep'+rowCls+intlRowCls+'"><span class="fi zp" data-zp="'+cid+'">'+idSafe+subRowD+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+medBadge+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+ffcls+'">'+flag+(flag?' ':'')+(locSafe||'—')+intlBadge+locSub+'</span><span class="fm">'+(departSafe||'—')+'</span><span class="'+fecls+'">'+etaStr+'</span>'+depSpotCell+'</div>';
   }
   var paxId='ar_'+(id).replace(/[^a-zA-Z0-9]/g,'');
   // PROGRESS BAR - simple logic:
@@ -2030,7 +2150,7 @@ function mkRow(f,cls,done){
     }
     var subRowAD=f.callsign?'<span class="sub" style="display:flex;flex-wrap:wrap;align-items:center;gap:3px;flex-basis:100%;width:100%">'+
       callsignSafe+'</span>':'';
-    return '<div class="fr arr-done"><span class="fi zp" data-zp="'+safeId3+'">'+idSafe+subRowAD+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+vipBadgeDone+gpuBadgeDone+medBadge+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+ffcls+'">'+flag+(flag?' ':'')+(locSafe||'—')+locSub+'</span><span class="fm">'+(departSafe||'—')+'</span><span class="fm">'+(arriveSafe||'—')+'</span><span class="'+fecls+'">'+etaStr+'</span>'+arrSpotCell+'</div>';
+    return '<div class="fr arr-done'+intlRowCls+'"><span class="fi zp" data-zp="'+safeId3+'">'+idSafe+subRowAD+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+vipBadgeDone+gpuBadgeDone+medBadge+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+ffcls+'">'+flag+(flag?' ':'')+(locSafe||'—')+intlBadge+locSub+'</span><span class="fm">'+(departSafe||'—')+'</span><span class="fm">'+(arriveSafe||'—')+'</span><span class="'+fecls+'">'+etaStr+'</span>'+arrSpotCell+'</div>';
   }
   var enRoute=hasDep&&!done&&!f._landed;
   var gd=enRoute?'<span style="position:absolute;left:4px;top:8px;width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 5px rgba(34,197,94,.5)"></span>':'';
@@ -2120,7 +2240,7 @@ function mkRow(f,cls,done){
   var towHint=rampRec.towNotes?'<span class="ramp-tow" title="'+htmlEsc(rampRec.towNotes)+'">📝</span>':'';
   var editBtn=(VIEW_MODE==='dispatch')?'<button class="ramp-edit-btn" type="button" title="Edit pax / flags / tow notes" onclick="event.stopPropagation();openRampEdit(\''+safeId+'\',\''+idSafe.replace(/'/g,"\\'")+'\')">✎</button>':'';
   var paxHtml=(VIEW_MODE==='dispatch')?('<input class="pax" type="number" min="0" max="99" placeholder="—" id="pax_'+paxId+'" data-plane="'+safeId+'" value="'+htmlEsc(String(paxVal))+'" oninput="event.stopPropagation();schedulePaxSave(this)" onclick="event.stopPropagation()" />'):('<span class="pax-ro">'+htmlEsc(String(paxVal||'—'))+'</span>');
-  return '<div class="fr'+rowCls+flashClass+(f.divertTo?' divert-row':'')+'"><span class="fi zp" data-zp="'+safeId+'">'+gd+idSafe+subRow+depBadgeHtml+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+divertBadge+qtBadge+vipBadge+gpuBadge+medBadge+customFlagsHtml+towHint+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+ffcls+'">'+flag+(flag?' ':'')+(locSafe||'—')+locSub+'</span><span class="fm">'+(departSafe||'—')+'</span><span class="fm">'+(arriveSafe||'—')+'</span><span class="'+fecls+'">'+etaStr+'</span>'+spotCell+'<span class="pax-cell">'+paxHtml+editBtn+'</span></div>';
+  return '<div class="fr'+rowCls+flashClass+intlRowCls+(f.divertTo?' divert-row':'')+'"><span class="fi zp" data-zp="'+safeId+'">'+gd+idSafe+subRow+depBadgeHtml+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+divertBadge+qtBadge+vipBadge+gpuBadge+medBadge+customFlagsHtml+towHint+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+ffcls+'">'+flag+(flag?' ':'')+(locSafe||'—')+intlBadge+locSub+'</span><span class="fm">'+(departSafe||'—')+'</span><span class="fm">'+(arriveSafe||'—')+'</span><span class="'+fecls+'">'+etaStr+'</span>'+spotCell+'<span class="pax-cell">'+paxHtml+editBtn+'</span></div>';
 }
 
 function calcMins(isoTime){
