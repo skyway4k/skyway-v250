@@ -500,6 +500,19 @@ body{display:flex;flex-direction:column;min-height:100vh}
   .boards{grid-template-columns:minmax(0,1fr)}
 }
 
+/* Narrow desktop boards: keep the full grid in one scrollable surface.  The previous
+   fluid tracks could collapse PAX into the center divider while row cells overflowed. */
+.board{overflow-x:auto;overflow-y:hidden}
+.board>.bh,.board>.cols,.board>.bb{width:100%;min-width:720px}
+.board>.bb{overflow:visible}
+.live-dot{position:absolute;left:3px;top:8px;width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 5px rgba(34,197,94,.5)}
+.fr .fi{padding-left:14px!important}
+@media (max-width:900px){
+  .board>.bh,.board>.cols,.board>.bb{min-width:560px}
+}
+@media (max-width:500px){
+  .board>.bh,.board>.cols,.board>.bb{min-width:520px}
+}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/twemoji.min.js" crossorigin="anonymous"></script>
@@ -2335,7 +2348,7 @@ function mkRow(f,cls,done){
     return '<div class="fr arr-done'+intlRowCls+'"><span class="fi zp" data-zp="'+safeId3+'">'+idSafe+subRowAD+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+customsBadge+vipBadgeDone+gpuBadgeDone+medBadge+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+ffcls+'">'+flag+(flag?' ':'')+(locSafe||'—')+intlBadge+locSub+'</span><span class="fm">'+(departSafe||'—')+'</span><span class="fm">'+(arriveSafe||'—')+'</span><span class="'+fecls+'">'+etaStr+'</span>'+arrSpotCell+'</div>';
   }
   var enRoute=hasDep&&!done&&!f._landed;
-  var gd=enRoute?'<span style="position:absolute;left:4px;top:8px;width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 5px rgba(34,197,94,.5)"></span>':'';
+  var gd=enRoute?'<span class="live-dot" aria-label="live ADS-B position"></span>':'';
   var safeId=id.replace(/[^a-zA-Z0-9]/g,'');
   // (medBadge already computed at top of mkRow alongside opBadge)
   // QT detection: check if this aircraft has a departure within 2hr of arrival
