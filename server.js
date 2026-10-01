@@ -631,14 +631,12 @@ function fmtTimeLA(iso) {
 function normAirport(code) {
   if (!code) return '';
   var c = String(code).toUpperCase().replace(/[^A-Z0-9]/g, '');
-  if (c.length === 3 && c !== 'KSFO') return 'K' + c; // US domestic IATA→ICAO guess; KSFO filter uses AIRPORT_ICAO
   return c;
 }
 function airportMatch(code, target) {
   var a = normAirport(code), b = normAirport(target);
   if (!a || !b) return false;
   if (a === b) return true;
-  // also match 3-letter vs K+3
   if (a.length === 4 && a[0] === 'K' && a.slice(1) === b) return true;
   if (b.length === 4 && b[0] === 'K' && b.slice(1) === a) return true;
   return false;
@@ -647,62 +645,119 @@ function parseIsoLoose(s) {
   if (!s) return null;
   var t = Date.parse(s);
   if (!isNaN(t)) return new Date(t).toISOString();
-  // TFMS sometimes omits Z; treat as UTC if looks like ISO without zone
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) {
     t = Date.parse(s.endsWith('Z') ? s : s + 'Z');
     if (!isNaN(t)) return new Date(t).toISOString();
   }
   return null;
 }
-function handleSwimMsg(message) {
-  swimStats.msgs++;
+function xmlAttr(block, name) {
+  var re = new RegExp('\\b' + name + '\\s*=\\s*"([^"]+)"', 'i');
+  var m = block.match(re);
+  return m ? m[1].trim() : null;
+}
+function swimPayload(message) {
   var payload = '';
   try {
-    var bin = message.getBinaryAttachment();
-    if (bin) payload = typeof bin === 'string' ? bin : Buffer.isBuffer(bin) ? bin.toString('utf-8') : String(bin);
-    if (!payload && message.getSdtContainer) payload = message.getSdtContainer().getValue();
+    if (message.getXmlContent) {
+      var xml = message.getXmlContent();
+      if (xml) payload = String(xml);
+    }
   } catch (e) { }
+  if (payload) return payload;
+  try {
+    var bin = message.getBinaryAttachment();
+    if (bin) {
+      if (typeof bin === 'string') payload = bin;
+      else if (Buffer.isBuffer(bin)) payload = bin.toString('utf-8');
+      else if (ArrayBuffer.isView(bin)) payload = Buffer.from(bin.buffer, bin.byteOffset, bin.byteLength).toString('utf-8');
+      else payload = String(bin);
+    }
+    if (!payload && message.getSdtContainer) {
+      var v = message.getSdtContainer().getValue();
+      if (v != null) payload = typeof v === 'string' ? v : String(v);
+    }
+  } catch (e) { }
+  return payload || '';
+}
+// Split a TFMS tfmDataService document into per-flight message blocks when present.
+function swimFlightBlocks(payload) {
+  var blocks = [];
+  var re = /<fdm:fltdMessage\b[\s\S]*?<\/fdm:fltdMessage>/gi;
+  var m;
+  while ((m = re.exec(payload))) blocks.push(m[0]);
+  if (!blocks.length) {
+    re = /<nxcm:fltdMessage\b[\s\S]*?<\/nxcm:fltdMessage>/gi;
+    while ((m = re.exec(payload))) blocks.push(m[0]);
+  }
+  if (!blocks.length) blocks.push(payload);
+  return blocks;
+}
+function handleSwimMsg(message) {
+  swimStats.msgs++;
+  var payload = swimPayload(message);
   if (!payload) return;
-  // FDPS-style event types + TFMS R14 flight-plan / amendment / dep-arr notification cues.
   // TODO(LADD): Limited Aircraft Data Distribution (LADD) still required for some GA tail/
-  // registration enrichment — TFMS flight plans alone may omit registration; keep ADS-B fallback.
+  // registration enrichment — TFMS flight plans/tracks alone may omit registration; keep ADS-B fallback.
+  var blocks = swimFlightBlocks(payload);
+  var changed = false;
+  for (var bi = 0; bi < blocks.length; bi++) {
+    if (ingestSwimFlightBlock(blocks[bi])) changed = true;
+  }
+  if (changed) broadcast({ type: 'board' });
+}
+function ingestSwimFlightBlock(block) {
+  // TFMS R14 fltdMessage attributes (acid/depArpt/arrArpt) + nested nxce/nxcm tags.
+  var cs = xmlAttr(block, 'acid') || xval(block, 'aircraftId', 'aircraftIdentification', 'callSign', 'callsign');
+  var orig = xmlAttr(block, 'depArpt') || xval(block, 'departurePoint[\\s\\S]*?airport', 'departureAirport', 'departureAerodrome.*?locationIndicator', 'originAirport', 'departureAerodrome');
+  var dest = xmlAttr(block, 'arrArpt') || xval(block, 'arrivalPoint[\\s\\S]*?airport', 'arrivalAirport', 'destinationAerodrome.*?locationIndicator', 'destinationAirport', 'destinationAerodrome');
+  var acType = xval(block, 'aircraftType', 'typeDesignator', 'aircraftSpecification') || xmlAttr(block, 'aircraftType');
+  var tail = xval(block, 'registration', 'aircraftRegistration', 'tailNumber');
+  var etd = parseIsoLoose(
+    xmlAttr(block, 'igtd') ||
+    xval(block, 'earliestRunwayDepartureTime', 'estimatedOffBlockTime', 'EOBT', 'departureDateTime', 'gateDepartureTime', 'estimatedDepartureTime', 'igtd') ||
+    xmlAttr(block.match(/<nxcm:departureFixAndTime\b[^>]*>/i)?.[0] || '', 'arrTime')
+  );
+  var etaAttrBlock = (block.match(/<nxcm:eta\b[^>]*>/i) || [])[0] || '';
+  var eta = parseIsoLoose(
+    xmlAttr(etaAttrBlock, 'timeValue') ||
+    xval(block, 'earliestRunwayArrivalTime', 'estimatedArrivalTime', 'ETA', 'arrivalDateTime', 'gateArrivalTime', 'estimatedTimeOfArrival') ||
+    xmlAttr(block.match(/<nxcm:arrivalFixAndTime\b[^>]*>/i)?.[0] || '', 'arrTime')
+  );
+  var msgType = (xmlAttr(block, 'msgType') || '').toLowerCase();
   var type = 'UNKNOWN';
-  if (payload.indexOf('DepartureInformation') >= 0 || payload.indexOf('flightDeparture') >= 0 ||
-      payload.indexOf('actualDeparture') >= 0 || payload.indexOf('FlightDeparture') >= 0) type = 'DEPARTURE';
-  else if (payload.indexOf('ArrivalInformation') >= 0 || payload.indexOf('flightArrival') >= 0 ||
-      payload.indexOf('actualArrival') >= 0 || payload.indexOf('FlightArrival') >= 0) type = 'ARRIVAL';
-  else if (payload.indexOf('EnRoute') >= 0 || payload.indexOf('enRoute') >= 0) type = 'EN_ROUTE';
-  else if (payload.indexOf('flightCreate') >= 0 || payload.indexOf('flightModify') >= 0 ||
-      payload.indexOf('FlightPlan') >= 0 || payload.indexOf('flightPlan') >= 0 ||
-      payload.indexOf('tfmData') >= 0 || payload.indexOf('TFMData') >= 0 ||
-      payload.indexOf('commonCompositeFlightId') >= 0) type = 'FLIGHT_PLAN';
-  var cs = xval(payload, 'aircraftIdentification', 'callSign', 'callsign');
-  var orig = xval(payload, 'departureAerodrome.*?locationIndicator', 'departureAirport', 'originAirport', 'departureAerodrome');
-  var dest = xval(payload, 'destinationAerodrome.*?locationIndicator', 'arrivalAirport', 'destinationAirport', 'destinationAerodrome');
-  var acType = xval(payload, 'aircraftType', 'typeDesignator', 'aircraftSpecification');
-  var tail = xval(payload, 'registration', 'aircraftRegistration', 'tailNumber');
-  var etd = parseIsoLoose(xval(payload, 'earliestRunwayDepartureTime', 'estimatedOffBlockTime', 'EOBT', 'departureDateTime', 'gateDepartureTime', 'estimatedDepartureTime'));
-  var eta = parseIsoLoose(xval(payload, 'earliestRunwayArrivalTime', 'estimatedArrivalTime', 'ETA', 'arrivalDateTime', 'gateArrivalTime', 'estimatedTimeOfArrival'));
-  var nowISO = new Date().toISOString();
-  if (!cs && !tail) return;
-  // Client-side KSFO filter: only board flights with origin OR destination matching home airport.
+  if (block.indexOf('DepartureInformation') >= 0 || block.indexOf('flightDeparture') >= 0 ||
+      block.indexOf('actualDeparture') >= 0 || msgType.indexOf('depart') >= 0) type = 'DEPARTURE';
+  else if (block.indexOf('ArrivalInformation') >= 0 || block.indexOf('flightArrival') >= 0 ||
+      block.indexOf('actualArrival') >= 0 || msgType.indexOf('arriv') >= 0) type = 'ARRIVAL';
+  else if (block.indexOf('EnRoute') >= 0 || block.indexOf('enRoute') >= 0 ||
+      msgType.indexOf('track') >= 0 || msgType.indexOf('flightplan') >= 0 ||
+      block.indexOf('flightCreate') >= 0 || block.indexOf('flightModify') >= 0 ||
+      block.indexOf('trackInformation') >= 0 || block.indexOf('fltdMessage') >= 0 ||
+      block.indexOf('FlightPlan') >= 0 || block.indexOf('tfmData') >= 0) type = 'FLIGHT_PLAN';
+
+  if (!cs && !tail) return false;
   var touchesHome = airportMatch(orig, AIRPORT_ICAO) || airportMatch(dest, AIRPORT_ICAO);
-  if (!touchesHome) return;
+  if (!touchesHome) return false;
+
   var key = (tail || cs).toUpperCase().replace(/[^A-Z0-9]/g, '');
   var ident = tail || cs;
+  var nowISO = new Date().toISOString();
+  var did = false;
+
   if (type === 'ARRIVAL' && airportMatch(dest, AIRPORT_ICAO)) {
     swimStats.arrivals++;
     upsertMovement('arrivals', key, { ident: ident, callsign: cs || '', type: acType || '', from: orig || '', arrived: true, arriveISO: eta || nowISO, arrive: fmtTimeLA(eta || nowISO), source: 'swim' });
+    did = true;
   } else if (type === 'DEPARTURE' && airportMatch(orig, AIRPORT_ICAO)) {
     swimStats.departures++;
     upsertMovement('departures', key, { ident: ident, callsign: cs || '', type: acType || '', to: dest || '', departed: true, departISO: etd || nowISO, depart: fmtTimeLA(etd || nowISO), source: 'swim' });
+    did = true;
   } else if (type === 'DEPARTURE' && airportMatch(dest, AIRPORT_ICAO)) {
-    // A departure ping whose destination IS us = an inbound flight that just left its origin —
-    // this is our earliest-possible signal, before SWIM ever sends an arrival ping.
     swimStats.arrivals++;
     upsertMovement('arrivals', key, { ident: ident, callsign: cs || '', type: acType || '', from: orig || '', arrived: false, departISO: etd || nowISO, depart: fmtTimeLA(etd || nowISO), arriveISO: eta || '', arrive: eta ? fmtTimeLA(eta) : '', source: 'swim' });
+    did = true;
   } else if (type === 'FLIGHT_PLAN' || type === 'EN_ROUTE' || type === 'UNKNOWN') {
-    // TFMS R14 flight plans / amendments: schedule-style rows with future-ish ETD/ETA when present.
     if (airportMatch(dest, AIRPORT_ICAO)) {
       swimStats.arrivals++;
       upsertMovement('arrivals', key, {
@@ -712,6 +767,7 @@ function handleSwimMsg(message) {
         departISO: etd || '', depart: etd ? fmtTimeLA(etd) : '',
         source: 'swim'
       });
+      did = true;
     }
     if (airportMatch(orig, AIRPORT_ICAO)) {
       swimStats.departures++;
@@ -722,9 +778,10 @@ function handleSwimMsg(message) {
         arriveISO: eta || '', arrive: eta ? fmtTimeLA(eta) : '',
         source: 'swim'
       });
+      did = true;
     }
   }
-  broadcast({ type: 'board' });
+  return did;
 }
 function upsertMovement(board, key, patch) {
   var m = movements[board];
