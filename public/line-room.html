@@ -180,15 +180,15 @@ img.emoji{height:1em;width:1em;margin:0 .05em 0 .1em;vertical-align:-0.1em;displ
   @page{margin:0.5in;size:letter}
 }
 
-/* ARRIVALS-FIRST RESPONSIVE
-   Priority when the viewport shrinks: arrivals board stays fully readable (never clip columns).
-   Map + forecast shrink first, then stack below the boards. */
+/* MAP-FIRST RESPONSIVE
+   Keep the page flow predictable at every desktop/tablet width: header, map + forecast,
+   then the scheduled boards. The phone-only coarse-pointer rule below hides the map. */
 body{display:flex;flex-direction:column;min-height:100vh}
 .topbar{order:0;flex-shrink:0}
-.boards{order:1}
-.done-boards{order:2}
-.resize-bar{order:3}
-.map-row{order:4;flex-shrink:0}
+.map-row{order:1;flex-shrink:0}
+.resize-bar{order:2}
+.boards{order:3}
+.done-boards{order:4}
 /* Overlays stay out of flex flow */
 #heli-overlay,#gnd-overlay,#shift-overlay,#tail-lookup-modal,#cesium-overlay,#ramp-overlay{order:99}
 
@@ -223,12 +223,8 @@ body{display:flex;flex-direction:column;min-height:100vh}
   .chart-area{min-width:160px}
 }
 @media (max-width: 1200px){
-  /* Stack map/forecast below boards; shrink map so arrivals stay above the fold */
-  .map-row{order:5;height:200px;min-height:180px;margin:8px 12px}
-  .boards{order:1}
-  .done-boards{order:2}
-  .resize-bar{order:3;display:none} /* map already below — grip unused */
-  .map-row{flex-direction:row}
+  /* Keep map + forecast above the boards while giving the boards their own scroll area. */
+  .map-row{height:200px;min-height:180px;margin:8px 12px;flex-direction:row}
 }
 @media (max-width: 900px){
   .map-row{flex-direction:column;height:auto;min-height:auto}
@@ -373,8 +369,8 @@ body{display:flex;flex-direction:column;min-height:100vh}
    desktop Cmd+/browser-zoom (which shrinks CSS px width) does NOT hide map or hourly chart. */
 @media (max-width: 900px) and (hover: none) and (pointer: coarse){
   .map-row,.resize-bar{display:none!important}
-  .boards{grid-template-columns:1fr;gap:0;order:1}
-  .done-boards{order:2}
+  .boards{grid-template-columns:1fr;gap:0;order:3}
+  .done-boards{order:4}
   .board:first-child{border-right:none}
   .boards > .board:first-child{order:1}
   .boards > .board:last-child{order:2}
@@ -478,6 +474,30 @@ body{display:flex;flex-direction:column;min-height:100vh}
     --eta-track:minmax(2rem,1fr);--spot-track:minmax(2.5rem,1fr);--pax-track:minmax(1.65rem,1fr)
   }
   .customs-badge{width:13px;height:12px;font-size:8px}
+}
+
+/* FINAL UNIFORM BOARD GRID
+   Headers and every row in a board share the exact same fluid tracks. Intrinsic minimums are
+   deliberately modest so each half of the side-by-side board can shrink without overlap;
+   cells wrap rather than clipping identifiers, ETAs, locations, or badges. */
+:root{
+  --arr-grid:minmax(4rem,1.15fr) minmax(1.75rem,.45fr) minmax(2rem,.55fr) minmax(2.5rem,1.15fr) minmax(2.5rem,1.35fr) minmax(2.25rem,.95fr) minmax(2.25rem,.95fr) minmax(2rem,.8fr) minmax(2.5rem,.8fr) minmax(2rem,.55fr);
+  --dep-grid:minmax(4rem,1.15fr) minmax(1.75rem,.45fr) minmax(2rem,.55fr) minmax(2.5rem,1.15fr) minmax(2.5rem,1.35fr) minmax(2.25rem,.95fr) minmax(2rem,.8fr) minmax(2.5rem,.8fr);
+  --arr-done-grid:minmax(4rem,1.15fr) minmax(1.75rem,.45fr) minmax(2rem,.55fr) minmax(2.5rem,1.15fr) minmax(2.5rem,1.35fr) minmax(2.25rem,.95fr) minmax(2.25rem,.95fr) minmax(2rem,.8fr) minmax(2.5rem,.8fr);
+  --dep-done-grid:minmax(4rem,1.15fr) minmax(1.75rem,.45fr) minmax(2rem,.55fr) minmax(2.5rem,1.15fr) minmax(2.5rem,1.35fr) minmax(2.25rem,.95fr) minmax(2rem,.8fr) minmax(2.5rem,.8fr);
+}
+.boards{grid-template-columns:minmax(0,1fr) minmax(0,1fr);min-width:0;width:100%}
+.board{min-width:0;max-width:100%;overflow-x:auto}
+.board .bb{width:100%;min-width:0;overflow:visible}
+.cols.ca,.fr,.fr.arr-active{grid-template-columns:var(--arr-grid)!important}
+.cols.cd,.fr.dep{grid-template-columns:var(--dep-grid)!important}
+.cols.ca-done,.fr.arr-done{grid-template-columns:var(--arr-done-grid)!important}
+.cols.cd-done,.fr.dep-simple{grid-template-columns:var(--dep-done-grid)!important}
+.cols,.fr{width:100%;min-width:0;box-sizing:border-box}
+.cols>span,.fr>*{min-width:0;overflow:visible!important;white-space:normal;overflow-wrap:anywhere;word-break:break-word}
+.fi,.ft,.ff,.fm,.fe{overflow:visible!important;text-overflow:clip!important;white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}
+@media (max-width:900px){
+  .boards{grid-template-columns:minmax(0,1fr)}
 }
 
 </style>
@@ -1273,6 +1293,11 @@ function lookupAptCity(code){
 }
 function enrichFlightLoc(f,cls){
   if(!f)return;
+  // Preserve route data when a live source uses its alternate field names. The server already
+  // merges SWIM/TFMS/ADB plans; this keeps the board from falling back to “— ADS-B live” when
+  // that same plan arrived as origin/destination on a thin client payload.
+  if(cls==='ar'&&!f.from)f.from=f.origin||f.originAirport||f.departureAirport||'';
+  if(cls==='de'&&!f.to)f.to=f.destination||f.destinationAirport||f.arrivalAirport||'';
   var loc=cls==='ar'?safeStr(f.from):safeStr(f.to);
   if(!loc)return;
   var intl=!!f.intl||isIntlCode(loc);
