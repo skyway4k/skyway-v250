@@ -665,6 +665,27 @@ function airportMatch(code, target) {
   if (b.length === 4 && b[0] === 'K' && b.slice(1) === a) return true;
   return false;
 }
+// Divert destinations we keep on the KSFO board briefly after a TFMS amend (SFO → OAK/SJC).
+var DIVERT_HOLD_MS = 30 * 60 * 1000;
+var DIVERT_LABELS = { KOAK: 'OAK', OAK: 'OAK', KSJC: 'SJC', SJC: 'SJC' };
+function divertLabel(code) {
+  var c = normAirport(code);
+  if (!c) return null;
+  if (DIVERT_LABELS[c]) return DIVERT_LABELS[c];
+  if (c.length === 4 && c[0] === 'K' && DIVERT_LABELS[c.slice(1)]) return DIVERT_LABELS[c.slice(1)];
+  return null;
+}
+function pruneDivertedMovements() {
+  var now = Date.now();
+  var changed = false;
+  movements.arrivals.forEach(function (f, key) {
+    if (f && f.divertAt && (now - f.divertAt) > DIVERT_HOLD_MS) {
+      movements.arrivals.delete(key);
+      changed = true;
+    }
+  });
+  return changed;
+}
 function parseIsoLoose(s) {
   if (!s) return null;
   var t = Date.parse(s);
@@ -761,8 +782,6 @@ function ingestSwimFlightBlock(block) {
       block.indexOf('FlightPlan') >= 0 || block.indexOf('tfmData') >= 0) type = 'FLIGHT_PLAN';
 
   if (!cs && !tail) return false;
-  var touchesHome = airportMatch(orig, AIRPORT_ICAO) || airportMatch(dest, AIRPORT_ICAO);
-  if (!touchesHome) return false;
 
   // Signature FBO board: GA / fractional / bizjet only — drop airline callsigns and airliner types
   // from SWIM/TFMS the same way ADS-B inbound already filters.
@@ -772,10 +791,40 @@ function ingestSwimFlightBlock(block) {
   var ident = tail || cs;
   var nowISO = new Date().toISOString();
   var did = false;
+  var divertLbl = divertLabel(dest);
+  var existingArr = movements.arrivals.get(key);
+  var touchesHome = airportMatch(orig, AIRPORT_ICAO) || airportMatch(dest, AIRPORT_ICAO);
+
+  // TFMS amend / arrival dest change: was on the KSFO arrivals board, now filed to KOAK or KSJC.
+  // Keep showing for 30 minutes with divertTo so the UI can render DIVERT/OAK or DIVERT/SJC.
+  // Skip when this message is clearly a KSFO-origin departure (turn outbound to OAK/SJC).
+  if (divertLbl && existingArr && !existingArr.arrived && !airportMatch(dest, AIRPORT_ICAO)
+      && !(type === 'DEPARTURE' && airportMatch(orig, AIRPORT_ICAO))) {
+    upsertMovement('arrivals', key, {
+      ident: ident,
+      callsign: cs || existingArr.callsign || '',
+      type: acType || existingArr.type || '',
+      from: orig || existingArr.from || '',
+      to: dest || existingArr.to || '',
+      filedDest: existingArr.filedDest || AIRPORT_ICAO,
+      divertTo: divertLbl,
+      divertAirport: normAirport(dest),
+      divertAt: existingArr.divertAt || Date.now(),
+      arrived: false,
+      arriveISO: eta || existingArr.arriveISO || '',
+      arrive: eta ? fmtTimeLA(eta) : (existingArr.arrive || ''),
+      departISO: etd || existingArr.departISO || '',
+      depart: etd ? fmtTimeLA(etd) : (existingArr.depart || ''),
+      source: 'swim-divert'
+    });
+    return true;
+  }
+
+  if (!touchesHome) return false;
 
   if (type === 'ARRIVAL' && airportMatch(dest, AIRPORT_ICAO)) {
     swimStats.arrivals++;
-    upsertMovement('arrivals', key, { ident: ident, callsign: cs || '', type: acType || '', from: orig || '', arrived: true, arriveISO: eta || nowISO, arrive: fmtTimeLA(eta || nowISO), source: 'swim' });
+    upsertMovement('arrivals', key, { ident: ident, callsign: cs || '', type: acType || '', from: orig || '', to: dest || AIRPORT_ICAO, filedDest: AIRPORT_ICAO, divertTo: '', divertAirport: '', divertAt: 0, arrived: true, arriveISO: eta || nowISO, arrive: fmtTimeLA(eta || nowISO), source: 'swim' });
     did = true;
   } else if (type === 'DEPARTURE' && airportMatch(orig, AIRPORT_ICAO)) {
     swimStats.departures++;
@@ -783,14 +832,17 @@ function ingestSwimFlightBlock(block) {
     did = true;
   } else if (type === 'DEPARTURE' && airportMatch(dest, AIRPORT_ICAO)) {
     swimStats.arrivals++;
-    upsertMovement('arrivals', key, { ident: ident, callsign: cs || '', type: acType || '', from: orig || '', arrived: false, departISO: etd || nowISO, depart: fmtTimeLA(etd || nowISO), arriveISO: eta || '', arrive: eta ? fmtTimeLA(eta) : '', source: 'swim' });
+    upsertMovement('arrivals', key, { ident: ident, callsign: cs || '', type: acType || '', from: orig || '', to: dest || AIRPORT_ICAO, filedDest: AIRPORT_ICAO, divertTo: '', divertAirport: '', divertAt: 0, arrived: false, departISO: etd || nowISO, depart: fmtTimeLA(etd || nowISO), arriveISO: eta || '', arrive: eta ? fmtTimeLA(eta) : '', source: 'swim' });
     did = true;
   } else if (type === 'FLIGHT_PLAN' || type === 'EN_ROUTE' || type === 'UNKNOWN') {
     if (airportMatch(dest, AIRPORT_ICAO)) {
       swimStats.arrivals++;
       upsertMovement('arrivals', key, {
         ident: ident, callsign: cs || '', type: acType || '', from: orig || '',
+        to: dest || AIRPORT_ICAO, filedDest: AIRPORT_ICAO,
         arrived: false,
+        // Clear stale divert if TFMS re-files back to KSFO
+        divertTo: '', divertAirport: '', divertAt: 0,
         arriveISO: eta || '', arrive: eta ? fmtTimeLA(eta) : '',
         departISO: etd || '', depart: etd ? fmtTimeLA(etd) : '',
         source: 'swim'
@@ -1074,8 +1126,12 @@ async function buildBoard(kind) {
   var rampAll = await getAllRampState();
   var rampById = {}; rampAll.forEach(function (r) { rampById[r.id] = r; });
   var entries = Array.from(m.values());
+  pruneDivertedMovements();
+  entries = Array.from(m.values());
   for (var i = 0; i < entries.length; i++) {
     var f = Object.assign({}, entries[i]);
+    // Drop expired diverts (also pruned above; belt-and-suspenders for in-flight hold).
+    if (f.divertAt && (Date.now() - f.divertAt) > DIVERT_HOLD_MS) continue;
     // Safety net: never surface airline/airliner rows on Signature boards regardless of source.
     var boardCs = f.callsign || '';
     var boardReg = f.ident || '';
@@ -1243,6 +1299,7 @@ setInterval(pollOpenSkyFlights, 120000);
 setInterval(pollAdsbInboundBoard, 45000);
 setInterval(() => broadcast({ type: 'status', data: buildStatusPayload() }), 15000);
 setInterval(pruneAndAccumulateGround, 60000);
+setInterval(function () { if (pruneDivertedMovements()) broadcast({ type: 'board' }); }, 60000);
 
 async function main() {
   await initSchema();

@@ -11,13 +11,13 @@
 :root{--b0:#e8eaed;--b1:#f0f1f3;--b2:#d9dce1;--b3:#c8ccd3;--bd:#b8bcc5;--t1:#1c1f26;--t2:#3d4352;--t3:#7a8194;--blue:#2563eb;--cyan:#0891b2;--green:#16a34a;--amber:#d97706;--red:#dc2626;--violet:#7c3aed;--mono:'JetBrains Mono',ui-monospace,monospace;--sans:'Inter','Outfit',system-ui,sans-serif}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:var(--sans);background:var(--b0);color:var(--t1);min-height:100vh;-webkit-font-smoothing:antialiased}
-.topbar{display:flex;align-items:center;justify-content:space-between;padding:0 24px;padding-top:env(safe-area-inset-top);padding-left:max(24px,env(safe-area-inset-left));padding-right:max(24px,env(safe-area-inset-right));height:54px;background:linear-gradient(180deg,#2c3040,#1e222e);border-bottom:1px solid rgba(255,255,255,.06);position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.topbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:8px 24px;padding-top:max(8px,env(safe-area-inset-top));padding-left:max(24px,env(safe-area-inset-left));padding-right:max(24px,env(safe-area-inset-right));min-height:54px;height:auto;background:linear-gradient(180deg,#2c3040,#1e222e);border-bottom:1px solid rgba(255,255,255,.06);position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.15)}
 /* On notched/Dynamic-Island iPhones the height grows by the safe-area inset.
    Use a clamp so the visual chrome stays the same — the inset just adds breathing room. */
 @supports(padding:env(safe-area-inset-top)){
   .topbar{height:auto;min-height:54px;box-sizing:border-box}
 }
-.tb-l{display:flex;align-items:center;gap:16px}
+.tb-l{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;min-width:0}
 .brand{display:flex;align-items:center;gap:8px}
 .brand-i{width:28px;height:28px;border-radius:6px;background:linear-gradient(135deg,#3b82f6,#60a5fa);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#1a1f2e}
 .brand-n{font-family:var(--mono);font-size:16px;font-weight:700;color:#fff}
@@ -35,10 +35,10 @@ body{font-family:var(--sans);background:var(--b0);color:var(--t1);min-height:100
 /* DEPARTED indicator now lives inline in the ETA cell (.dep-eta) — no separate badge needed */
 .fi.zp{position:relative}
 .ga{font-family:var(--mono);font-size:9px;font-weight:700;color:#8ba3c4;padding:3px 8px;border-radius:8px;background:rgba(139,163,196,.08);border:1px solid rgba(139,163,196,.15)}
-.tb-c{display:flex;align-items:center;gap:10px}
+.tb-c{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;min-width:0}
 .apt{font-family:var(--mono);font-size:15px;font-weight:800;color:#b4c4d8}
 .apn{font-size:13px;color:rgba(255,255,255,.5);font-weight:500}
-.tb-r{display:flex;align-items:center;gap:10px}
+.tb-r{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;min-width:0;justify-content:flex-end}
 .fd{display:flex;align-items:center;gap:4px;padding:3px 8px;border-radius:8px;font-family:var(--mono);font-size:9px;font-weight:600}
 .fd .d{width:5px;height:5px;border-radius:50%;background:currentColor}
 .fd.on{color:#4ade80;background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.15)}
@@ -46,13 +46,13 @@ body{font-family:var(--sans);background:var(--b0);color:var(--t1);min-height:100
 .clk{font-family:var(--mono);font-size:11px;font-weight:600;color:rgba(255,255,255,.6)}
 .ib{width:30px;height:30px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;cursor:pointer;color:rgba(255,255,255,.5);font-size:13px;transition:all .15s}
 .ib:hover{border-color:rgba(232,212,139,.4);color:#b4c4d8}
-.map-row{display:flex;gap:10px;margin:10px 12px;height:260px;min-height:260px;flex-shrink:0}
-.map-area{position:relative;flex:2.5;border-radius:10px;border:1px solid var(--bd);overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.02);isolation:isolate;contain:layout paint}
+.map-row{display:flex;flex-direction:row;flex-wrap:nowrap;gap:10px;margin:10px 12px;height:300px;min-height:280px;flex-shrink:0}
+.map-area{position:relative;flex:1.7;min-width:0;border-radius:10px;border:1px solid var(--bd);overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.02);isolation:isolate;contain:layout paint}
 #map{width:100%;height:100%;background:#0b1d2a;position:relative;overflow:hidden;contain:strict}
 .leaflet-container{overflow:hidden!important;position:relative!important;contain:layout paint}
 .leaflet-pane,.leaflet-marker-pane,.leaflet-overlay-pane{contain:layout style}
-.chart-area{flex:1;border-radius:10px;border:1px solid var(--bd);background:var(--b1);padding:12px 14px;display:flex;flex-direction:column;box-shadow:0 1px 3px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.02)}
-.leaflet-tile-pane{filter:saturate(.5) brightness(1.02) contrast(1.02)}
+.chart-area{flex:1.15;min-width:220px;border-radius:10px;border:1px solid var(--bd);background:var(--b1);padding:12px 14px;display:flex;flex-direction:column;box-shadow:0 1px 3px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.02)}
+.leaflet-tile-pane{filter:saturate(1.15) hue-rotate(195deg) brightness(.92) contrast(1.06) sepia(.12)}
 .leaflet-control-zoom a{background:var(--b1)!important;color:var(--t1)!important;border-color:var(--bd)!important;font-weight:700!important}
 .leaflet-control-attribution{display:none!important}
 .ac-tip{background:rgba(255,255,255,.92)!important;border:1px solid rgba(0,0,0,.08)!important;border-radius:4px!important;padding:2px 5px!important;font-family:'JetBrains Mono',monospace!important;font-size:9px!important;font-weight:700!important;color:#111827!important;box-shadow:0 1px 4px rgba(0,0,0,.08)!important;white-space:nowrap!important}
@@ -63,25 +63,25 @@ body{font-family:var(--sans);background:var(--b0);color:var(--t1);min-height:100
 .hc .v{font-family:var(--mono);font-size:14px;font-weight:800;line-height:1}
 .hc .l{font-family:var(--mono);font-size:6px;color:var(--t3);text-transform:uppercase;letter-spacing:.6px;margin-top:2px;font-weight:600}
 .hc.b .v{color:var(--blue)}.hc.g .v{color:var(--green)}.hc.a .v{color:var(--amber)}.hc.c .v{color:var(--cyan)}.hc.r .v{color:var(--red)}
-.boards{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--bd);background:var(--b0)}
+.boards{display:grid;grid-template-columns:1fr 1fr;gap:0;border-top:1px solid var(--bd);background:var(--b0)}
 .board{display:flex;flex-direction:column;background:var(--b1)}
 .board:first-child{border-right:1px solid var(--bd)}
 .bh{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:linear-gradient(180deg,#e4e6eb,#d8dae0);border-bottom:1px solid var(--bd)}
-.bt{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1.2px}
+.bt{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:1.2px}
 .bt.ar{color:var(--blue)}.bt.de{color:var(--red)}
-.bc{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--t3)}
+.bc{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--t3)}
 /* Column system. Two patterns: content columns use fr units (flex-share of remaining space);
    icon columns (OP, STATUS) use fixed pixel widths because they hold same-size pills regardless
    of how wide the table is. fr-sized pill columns get visually huge on wide screens for no
    reason (an "NJ" pill doesn't need 80px). */
-.cols{display:grid;grid-template-columns:1.1fr 28px 56px 1.05fr 1.05fr .95fr .95fr .8fr .8fr .55fr;gap:5px;padding:7px 12px;font-family:var(--mono);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
-.cols.ca-done{display:grid;grid-template-columns:1.1fr 28px 56px 1.05fr 1.05fr .95fr .95fr .85fr .8fr;gap:5px;padding:7px 12px;font-family:var(--mono);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
-.cols.cd-done{display:grid;grid-template-columns:1.1fr 28px 56px 1.05fr 1.05fr .95fr .85fr .8fr;gap:5px;padding:7px 12px;font-family:var(--mono);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
+.cols{display:grid;grid-template-columns:1.1fr 28px 56px 1.05fr 1.05fr .95fr .95fr .8fr .8fr .55fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
+.cols.ca-done{display:grid;grid-template-columns:1.1fr 28px 56px 1.05fr 1.05fr .95fr .95fr .85fr .8fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
+.cols.cd-done{display:grid;grid-template-columns:1.1fr 28px 56px 1.05fr 1.05fr .95fr .85fr .8fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
 .cols.ca{grid-template-columns:1.1fr 28px 56px 1.05fr 1.05fr .95fr .95fr .8fr .8fr .55fr}
 .cols.cd{grid-template-columns:1.1fr 28px 56px 1.05fr 1.05fr .95fr .8fr .8fr}
 .cols span:first-child{text-align:left;padding-left:16px}
 .bb{flex:1;padding:5px 8px}
-.fr{display:grid;grid-template-columns:1.1fr 28px 56px 1.05fr 1.05fr .95fr .95fr .8fr .8fr .55fr;gap:5px;align-items:center;padding:7px 8px;background:var(--b1);border:1px solid var(--bd);border-radius:7px;margin-bottom:3px;cursor:pointer;transition:all .12s;box-shadow:0 1px 2px rgba(0,0,0,.02)}
+.fr{display:grid;grid-template-columns:1.1fr 28px 56px 1.05fr 1.05fr .95fr .95fr .8fr .8fr .55fr;gap:5px;align-items:center;padding:9px 8px;background:var(--b1);border:1px solid var(--bd);border-radius:7px;margin-bottom:3px;cursor:pointer;transition:all .12s;box-shadow:0 1px 2px rgba(0,0,0,.02);font-size:14px}
 .fr > *{min-width:0;overflow:hidden}
 /* .fr > .fi keeps overflow:hidden from the parent rule above — badges wrap inside the cell */
 .fr.arr-done{grid-template-columns:1.1fr 28px 56px 1.05fr 1.05fr .95fr .95fr .85fr .8fr}
@@ -99,11 +99,12 @@ body{font-family:var(--sans);background:var(--b0);color:var(--t1);min-height:100
 .fr:hover{background:var(--b2);border-color:var(--bd)}
 .fr.done{opacity:1}
 .fr.arr-active{background:rgba(37,99,235,.03);border-color:rgba(37,99,235,.12)}
+.fr.divert-row{background:rgba(14,165,233,.08);border-color:rgba(14,165,233,.35);box-shadow:inset 3px 0 0 #0ea5e9}
 .fr.arr-active:hover{background:rgba(37,99,235,.06)}
 .fr.dep-ground{background:rgba(220,38,38,.02);border-color:rgba(220,38,38,.1)}
 .fr.dep-gone{background:rgba(220,38,38,.04);border-color:rgba(220,38,38,.12)}
 .chk{width:16px;height:16px;accent-color:var(--green);cursor:pointer;margin:0 auto;display:block}
-.fi{font-family:var(--mono);font-weight:800;font-size:17px;color:var(--cyan);line-height:1.2;position:relative;padding-left:16px;min-width:0;overflow:hidden;text-overflow:clip;display:flex;flex-wrap:wrap;align-items:baseline;column-gap:4px;row-gap:2px}
+.fi{font-family:var(--mono);font-weight:800;font-size:19px;color:var(--cyan);line-height:1.2;position:relative;padding-left:16px;min-width:0;overflow:hidden;text-overflow:clip;display:flex;flex-wrap:wrap;align-items:baseline;column-gap:4px;row-gap:2px}
 .fi>*{flex-shrink:0}
 
 .spot-dd{z-index:10000;background:var(--b1);border:1px solid var(--bd);border-radius:4px;box-shadow:0 4px 12px rgba(0,0,0,.3);padding:4px 0;overflow-y:auto;min-width:140px}
@@ -115,15 +116,15 @@ body{font-family:var(--sans);background:var(--b0);color:var(--t1);min-height:100
 .map-tb-btn:hover{transform:translateX(2px);box-shadow:0 3px 8px rgba(0,0,0,.25)}
 .map-tb-btn:active{transform:translateX(0)}
 .zp{cursor:pointer}.fi.zp:hover{color:var(--blue);text-decoration:underline}
-.fi .sub{font-size:9px;font-weight:500;color:var(--t3);flex-basis:100%;width:100%;line-height:1.2}
-.ft{font-family:var(--mono);font-size:16px;font-weight:700;color:var(--t1);text-align:center;line-height:1.2;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:0;overflow:hidden}
-.ft .sub{font-size:8px;font-weight:500;color:var(--t3);display:block}
-.ff{font-family:var(--mono);font-size:14px;font-weight:600;color:var(--t2);text-align:center;line-height:1.2;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:0;overflow:hidden}
+.fi .sub{font-size:11px;font-weight:500;color:var(--t3);flex-basis:100%;width:100%;line-height:1.2}
+.ft{font-family:var(--mono);font-size:17px;font-weight:700;color:var(--t1);text-align:center;line-height:1.2;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:0;overflow:hidden}
+.ft .sub{font-size:10px;font-weight:500;color:var(--t3);display:block}
+.ff{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--t2);text-align:center;line-height:1.2;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:0;overflow:hidden}
 .ff.intl{color:var(--red);font-weight:700}
-.ff .sub{font-size:8px;font-weight:400;color:var(--t3);display:block}
+.ff .sub{font-size:10px;font-weight:400;color:var(--t3);display:block}
 .ff.intl .sub{color:var(--red);font-weight:500;opacity:.7;font-size:8px}
-.fm{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--t2);text-align:center;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:0;overflow:hidden}
-.fe{font-family:var(--mono);font-size:13px;font-weight:700;text-align:center;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:0;overflow:hidden}
+.fm{font-family:var(--mono);font-size:14px;font-weight:600;color:var(--t2);text-align:center;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:0;overflow:hidden}
+.fe{font-family:var(--mono);font-size:14px;font-weight:700;text-align:center;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:0;overflow:hidden}
 .fe.soon{color:var(--green)}.fe.mid{color:var(--amber)}.fe.far{color:var(--t3)}
 .done-hdr{border-top:2px solid var(--bd)}
 .prog{display:flex;align-items:center;padding:0 2px;width:100%;min-width:20px;min-height:6px}
@@ -173,32 +174,33 @@ img.emoji{height:1em;width:1em;margin:0 .05em 0 .1em;vertical-align:-0.1em;displ
   #shift-overlay button{display:none!important}
   @page{margin:0.5in;size:letter}
 }
-/* MOBILE RESPONSIVE */
-@media (max-width: 900px){
-  .topbar{flex-wrap:wrap;height:auto;padding:8px 12px;gap:6px}
+/* RESPONSIVE — header wraps early; map+forecast and arr/dep stay side-by-side until phone */
+@media (max-width: 1100px){
+  .topbar{padding:8px 12px;gap:6px}
   .tb-l,.tb-c,.tb-r{gap:6px}
-  .tb-c{order:2;width:100%;justify-content:center;border-top:1px solid rgba(255,255,255,.08);padding-top:6px;margin-top:4px}
-  .tb-r{order:3;gap:4px;flex-wrap:wrap;justify-content:center}
+  .tb-r{gap:4px;justify-content:flex-end}
   .brand-n{font-size:14px}
   .sep{display:none}
   .tb-l span[style*="letter-spacing:3px"]{font-size:11px!important;letter-spacing:1px!important}
-  .clk{font-size:10px}
+  .clk{font-size:11px}
   .apt{font-size:16px}
-  .apn{font-size:10px}
-  .fd{font-size:8px;padding:2px 5px}
-  .ib{width:26px;height:26px;font-size:11px}
-  .map-row{flex-direction:column;height:auto;min-height:auto;margin:8px}
-  #map{height:260px;min-height:260px;width:100%!important}
-  .chart-area{width:100%;min-height:140px}
+  .apn{font-size:11px}
+  .fd{font-size:9px;padding:2px 6px}
+  .ib{width:28px;height:28px;font-size:12px}
+  .map-row{height:280px;min-height:260px}
+  .chart-area{min-width:180px}
+}
+@media (max-width: 900px){
+  .tb-c{order:2;width:100%;justify-content:center;border-top:1px solid rgba(255,255,255,.08);padding-top:6px;margin-top:4px}
+  .tb-r{order:3;width:100%;justify-content:center}
+  .map-row{height:240px;min-height:220px;margin:8px}
   .hud{flex-wrap:wrap;max-width:calc(100% - 16px)}
   .hc{padding:4px 8px;min-width:42px;font-size:10px}
   .hc .v{font-size:13px}
   .hc .l{font-size:8px}
-  .boards{grid-template-columns:1fr;gap:2px}
-  .board{border-top:2px solid var(--bd)}
   .bh{padding:8px 10px}
-  .bt{font-size:11px}
-  .bc{font-size:14px}
+  .bt{font-size:12px}
+  .bc{font-size:12px}
   /* Mobile: same OP=24px / STATUS=44px fixed-width strategy. Slightly smaller than desktop
      because mobile pills also shrink with the smaller font-size. Tight 2px gap so columns
      don't pull apart on a phone screen. */
@@ -222,6 +224,15 @@ img.emoji{height:1em;width:1em;margin:0 .05em 0 .1em;vertical-align:-0.1em;displ
   .spot-click{font-size:8px!important}
   .spot-dd{font-size:9px;max-width:160px}
   .spot-dd-item{padding:4px 8px}
+}
+
+@media (max-width: 700px){
+  .map-row{flex-direction:column;height:auto;min-height:auto;margin:8px}
+  #map{height:240px;min-height:220px;width:100%!important}
+  .chart-area{width:100%;min-width:0;min-height:150px}
+  .boards{grid-template-columns:1fr;gap:2px}
+  .board{border-top:2px solid var(--bd)}
+  .board:first-child{border-right:none}
 }
 @media (max-width: 500px){
   .topbar{padding:6px 8px}
@@ -272,9 +283,10 @@ img.emoji{height:1em;width:1em;margin:0 .05em 0 .1em;vertical-align:-0.1em;displ
   /* Map gets back some height since we have more vertical space too */
   #map{height:240px;min-height:240px}
 }
-  .fr{font-size:8.5px!important;padding:5px 4px!important}
-  .fi{font-size:9.5px!important}
-  .cols.ca,.cols.cd{grid-template-columns:1fr 20px 36px .7fr .7fr .5fr .5fr .5fr .65fr .35fr!important;font-size:7px!important}
+@media (max-width: 429px){
+  .fr{font-size:11px!important;padding:6px 5px!important}
+  .fi{font-size:13px!important}
+  .cols.ca,.cols.cd{grid-template-columns:1fr 20px 36px .7fr .7fr .5fr .5fr .5fr .65fr .35fr!important;font-size:8px!important}
   .cols.cd{grid-template-columns:1fr 20px 36px .7fr .7fr .5fr .5fr .65fr!important}
   .fr.ar{grid-template-columns:1fr 20px 36px .7fr .7fr .5fr .5fr .5fr .65fr .35fr!important}
   .fr.dep,.fr.dep-ground,.fr.dep-gone{grid-template-columns:1fr 20px 36px .7fr .7fr .5fr .5fr .65fr!important}
@@ -307,7 +319,7 @@ img.emoji{height:1em;width:1em;margin:0 .05em 0 .1em;vertical-align:-0.1em;displ
 <div class="hud"><div class="hc b"><span class="v" id="ht">0</span><span class="l">Arr &lt;60m</span></div><div class="hc a" style="cursor:pointer" onclick="showGround()"><span class="v" id="hg">0</span><span class="l">On Ground</span></div><div class="hc c"><span class="v" id="hd">0</span><span class="l">Dep &lt;60m</span></div><div class="hc heli-hud" id="heliHudCell" style="cursor:pointer;display:none" onclick="showHeliPanel()" title="Click to open live helicopter monitor"><span class="v" id="hh" style="color:#dc2626">0</span><span class="l" style="color:#dc2626">🚁 Heli &lt;15nm</span></div></div>
 </div>
 <div class="chart-area">
-<div style="font-family:var(--mono);font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--t3);margin-bottom:6px;display:flex;justify-content:space-between;align-items:center"><span>Hourly Forecast</span><span style="display:flex;gap:10px;font-size:7px"><span style="display:flex;align-items:center;gap:3px"><span style="width:6px;height:6px;border-radius:1px;background:#3b82f6"></span>Arr</span><span style="display:flex;align-items:center;gap:3px"><span style="width:6px;height:6px;border-radius:1px;background:linear-gradient(180deg,#fbbf24,#d97706)"></span>On Gnd</span><span style="display:flex;align-items:center;gap:3px"><span style="width:6px;height:6px;border-radius:1px;background:#dc2626"></span>Dep</span></span></div>
+<div style="font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--t3);margin-bottom:6px;display:flex;justify-content:space-between;align-items:center"><span>Hourly Forecast</span><span style="display:flex;gap:10px;font-size:9px"><span style="display:flex;align-items:center;gap:3px"><span style="width:6px;height:6px;border-radius:1px;background:#3b82f6"></span>Arr</span><span style="display:flex;align-items:center;gap:3px"><span style="width:6px;height:6px;border-radius:1px;background:linear-gradient(180deg,#fbbf24,#d97706)"></span>On Gnd</span><span style="display:flex;align-items:center;gap:3px"><span style="width:6px;height:6px;border-radius:1px;background:#dc2626"></span>Dep</span></span></div>
 <div id="chartBars" style="flex:1;display:flex;align-items:stretch;gap:2px"></div>
 </div>
 </div>
@@ -1330,9 +1342,8 @@ function initMap(){
     }catch(e){}
   }
   // Dark aviation-style tile strategy — modeled on FlightAware's look.
-  // Order: CARTO dark first (best aesthetic), then ESRI dark gray, then CARTO voyager (light fallback),
-  // then OSM as last-resort. This way if CARTO is blocked (corporate network), we still degrade
-  // gracefully without losing the map entirely.
+  // Order: CARTO dark (bluescale via CSS filter), Voyager, Positron, ESRI light gray, OSM last.
+  // Prefer cool blue/cyan basemaps; warm ESRI Dark Gray removed. Degrades if CARTO is blocked.
   //
   // Robustness model (rebuilt v232 to fix recurrent "land layer drops out" bug):
   //   1. Each provider gets 10s to load its FIRST tile before we consider it failed.
@@ -1348,15 +1359,15 @@ function initMap(){
   //   4. The periodic health check now confirms "no tiles" across 2 consecutive 5s checks
   //      before nudging redraw, so it doesn't race during normal pan/zoom transitions.
   var tileProviders=[
-    {name:'ESRI-DarkGray',url:'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',sub:null,theme:'dark'},
-    {name:'OSM',url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',sub:null,theme:'light'},
+    {name:'CARTO-Dark',url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',sub:'abcd',theme:'dark'},
     {name:'CARTO-Voyager',url:'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',sub:'abcd',theme:'light'},
-    {name:'CARTO-Dark',url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',sub:'abcd',theme:'dark'}
+    {name:'CARTO-Positron',url:'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',sub:'abcd',theme:'light'},
+    {name:'ESRI-LightGray',url:'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',sub:null,theme:'light'},
+    {name:'OSM',url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',sub:null,theme:'light'}
   ];
-  // Dark gray tile substitute — when a single tile fails, this fills the cell with a dark
-  // gray solid that matches the dark theme background, instead of a transparent void.
-  // Also helps catch the issue visually if many tiles are erroring (you'd see uniform gray
-  // tile grid instead of pure black map).
+  window._darkTileUrl='https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
+  window._lightTileUrl='https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
+  // Blue-dark tile substitute — fills a failed cell with a cool navy instead of a void.
   var DARK_ERROR_TILE='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
   var currentProviderIdx=0;
   var providerCycle=0; // increments each full cycle through all providers; used for cooldown
@@ -2067,6 +2078,12 @@ function mkRow(f,cls,done){
     var _gpuTitle=(_gpuOp&&_gpuOp.title)?_gpuOp.title:'GPU requested on arrival';
     gpuBadge='<span title="'+htmlEsc(_gpuTitle)+'" style="display:inline-block;background:#f59e0b;color:#111827;font-size:8px;font-weight:900;padding:1px 5px;border-radius:3px;margin-left:4px;letter-spacing:.5px;line-height:1">GPU</span>';
   }
+  // Divert badge — TFMS amend moved arrival dest from KSFO to KOAK/KSJC; held 30m on board.
+  var divertBadge='';
+  if(cls==='ar'&&f.divertTo){
+    var _dlab=String(f.divertTo).toUpperCase();
+    divertBadge='<span title="Diverted from KSFO to K'+htmlEsc(_dlab)+' — kept on board 30 min" style="display:inline-block;background:#0ea5e9;color:#fff;font-size:9px;font-weight:900;padding:2px 6px;border-radius:3px;margin-left:4px;letter-spacing:.4px;line-height:1;box-shadow:0 0 6px rgba(14,165,233,.45)">DIVERT/'+htmlEsc(_dlab)+'</span>';
+  }
   // (opBadge already computed at top of mkRow)
   // subRow: combined callsign + badges line, sits below the tail. All badges live here on a
   // single flex line that takes full width (flex-basis:100%) inside the .fi flex container.
@@ -2082,7 +2099,7 @@ function mkRow(f,cls,done){
   var towHint=rampRec.towNotes?'<span class="ramp-tow" title="'+htmlEsc(rampRec.towNotes)+'">📝</span>':'';
   var editBtn=(VIEW_MODE==='dispatch')?'<button class="ramp-edit-btn" type="button" title="Edit pax / flags / tow notes" onclick="event.stopPropagation();openRampEdit(\''+safeId+'\',\''+idSafe.replace(/'/g,"\\'")+'\')">✎</button>':'';
   var paxHtml=(VIEW_MODE==='dispatch')?('<input class="pax" type="number" min="0" max="99" placeholder="—" id="pax_'+paxId+'" data-plane="'+safeId+'" value="'+htmlEsc(String(paxVal))+'" oninput="event.stopPropagation();schedulePaxSave(this)" onclick="event.stopPropagation()" />'):('<span class="pax-ro">'+htmlEsc(String(paxVal||'—'))+'</span>');
-  return '<div class="fr'+rowCls+flashClass+'"><span class="fi zp" data-zp="'+safeId+'">'+gd+idSafe+subRow+depBadgeHtml+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+qtBadge+vipBadge+gpuBadge+medBadge+customFlagsHtml+towHint+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+ffcls+'">'+flag+(flag?' ':'')+(locSafe||'—')+locSub+'</span><span class="fm">'+(departSafe||'—')+'</span><span class="fm">'+(arriveSafe||'—')+'</span><span class="'+fecls+'">'+etaStr+'</span>'+spotCell+'<span class="pax-cell">'+paxHtml+editBtn+'</span></div>';
+  return '<div class="fr'+rowCls+flashClass+(f.divertTo?' divert-row':'')+'"><span class="fi zp" data-zp="'+safeId+'">'+gd+idSafe+subRow+depBadgeHtml+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+divertBadge+qtBadge+vipBadge+gpuBadge+medBadge+customFlagsHtml+towHint+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+ffcls+'">'+flag+(flag?' ':'')+(locSafe||'—')+locSub+'</span><span class="fm">'+(departSafe||'—')+'</span><span class="fm">'+(arriveSafe||'—')+'</span><span class="'+fecls+'">'+etaStr+'</span>'+spotCell+'<span class="pax-cell">'+paxHtml+editBtn+'</span></div>';
 }
 
 function calcMins(isoTime){
