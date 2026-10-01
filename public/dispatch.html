@@ -2939,8 +2939,10 @@ function renderSwimHUD(swim){
   var el=document.getElementById('fswim');
   if(!el)return;
   if(!swim){el.className='fd off';el.title='SWIM not configured on server';return;}
-  if(swim.connected){el.className='fd on';el.title='FAA SWIM SCDS connected — '+swim.msgs+' msgs ('+swim.arrivals+' arr / '+swim.departures+' dep)';}
-  else{el.className='fd off';el.title='SWIM not connected: '+(swim.reason||'unknown');}
+  var sfdps=swim.feeds&&swim.feeds.sfdps;
+  var sfdpsNote=sfdps?(sfdps.enabled?(sfdps.connected?'SFDPS connected':'SFDPS queue configured but not connected'):'SFDPS queue not configured — TFMS only'):'';
+  if(swim.connected){el.className='fd on';el.title='FAA SWIM SCDS connected — '+swim.msgs+' msgs ('+swim.arrivals+' arr / '+swim.departures+' dep)'+(sfdpsNote?' · '+sfdpsNote:'');}
+  else{el.className='fd off';el.title='SWIM not connected: '+(swim.reason||'unknown')+(sfdpsNote?' · '+sfdpsNote:'');}
 }
 function renderIdleHUD(idle){
   var el=document.getElementById('fidle');

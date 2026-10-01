@@ -600,7 +600,7 @@ async function handleAdsbStates(query, res) {
 // Applied to ADS-B, SWIM/TFMS, and OpenSky /flights so boards stay GA/biz-heavy.
 // ============================================================================================
 var AIRLINE_CS = new Set(('UAL AAL DAL SWA ASA JBU NKS FFT SKW EDV RPA ASH ENY QXE HAL CPA BAW AFR DLH UAE CSG CCA CES CSN CHH CES FDX UPS GTI ATN ABX GTI VRD SCX WOA UAL CKS MPO').split(/\s+/));
-var FRAC_CS = /^(EJA|EJM|LXJ|TWY|JTL|XOJ|OPT|JRE|GTT|DPJ|VJT|GAJ|HRT|TIV|LNJ|CVC)/;
+var FRAC_CS = /^(EJA|EJM|LXJ|TWY|JTL|XOJ|OPT|JRE|GTT|DPJ|VJT|GAJ|HRT|TIV|LNJ|CVC|CRE|QQE)/;
 function isGaBizTraffic(flight, reg, typeCode) {
   var cs = String(flight || '').trim().toUpperCase();
   var r = String(reg || '').trim().toUpperCase();
@@ -629,7 +629,7 @@ function isGaBizTraffic(flight, reg, typeCode) {
 // ============================================================================================
 var swimStats = {
   connected: false, msgs: 0, arrivals: 0, departures: 0, reason: '',
-  feeds: { tfms: { connected: false, msgs: 0 }, sfdps: { connected: false, msgs: 0, enabled: !!SWIM_QUEUE_SFDPS } }
+  feeds: { tfms: { connected: false, msgs: 0 }, sfdps: { connected: false, msgs: 0, enabled: !!SWIM_QUEUE_SFDPS, reason: SWIM_QUEUE_SFDPS ? '' : 'SFDPS queue not configured' } }
 };
 var movements = { arrivals: new Map(), departures: new Map() }; // key: canonical ident (prefer N-reg)
 var landedDroppedAt = new Map(); // legacy suppression map; landed rows now remain until departure
@@ -744,7 +744,7 @@ function fracHeuristicLinks(reg, cs) {
     }
     return;
   }
-  var cm = c.match(/^(EJA|EJM|LXJ|TWY|JTL|XOJ|OPT|JRE|GTT|DPJ|VJT|GAJ|HRT|TIV|LNJ|CVC)(\d+[A-Z]?)$/);
+  var cm = c.match(/^(EJA|EJM|LXJ|TWY|JTL|XOJ|OPT|JRE|GTT|DPJ|VJT|GAJ|HRT|TIV|LNJ|CVC|CRE|QQE)(\d+[A-Z]?)$/);
   var rm = r.match(/^N(\d+)([A-Z]{0,3})$/);
   if (cm && rm) {
     var csNum = cm[2].replace(/[A-Z]/g, '');
@@ -1042,6 +1042,18 @@ function handleSwimMsg(message, feedLabel) {
   }
   if (changed) broadcast({ type: 'board' });
 }
+function swimBlockLaddBlocked(block) {
+  // Respect an explicit privacy/distribution block carried by a SWIM message. Do not
+  // treat arbitrary prose containing "blocked" as a block; only inspect common
+  // LADD/privacy/data-distribution fields and exact blocked values.
+  var re = /(?:ladd|privacy|dataDistribution|distribution|aircraftData|display|visibility|blockStatus)\s*=\s*[\"']([^\"']+)[\"']/gi;
+  var m;
+  while ((m = re.exec(String(block || '')))) {
+    var v = String(m[1] || '').trim().toUpperCase().replace(/[ _-]+/g, '_');
+    if (/^(BLOCKED|LADD_BLOCKED|PRIVATE|NO_DISTRIBUTION|NODISPLAY)$/.test(v)) return true;
+  }
+  return false;
+}
 function ingestSwimFlightBlock(block, feedLabel) {
   // TFMS R14 fltdMessage attributes (acid/depArpt/arrArpt) + nested nxce/nxcm tags.
   // SFDPS/FDPS FIXM often uses aircraftIdentification / aerodrome locationIndicator instead.
@@ -1084,7 +1096,7 @@ function ingestSwimFlightBlock(block, feedLabel) {
       (feedLabel === 'sfdps')) type = 'FLIGHT_PLAN';
 
   if (!cs && !tail) return false;
-  if (isLaddBlocked(tail, cs)) return false;
+  if (isLaddBlocked(tail, cs) || swimBlockLaddBlocked(block)) return false;
 
   // KSFO GA board: GA / fractional / bizjet only — drop airline callsigns and airliner types
   if (!isGaBizTraffic(cs || '', tail || '', acType || '')) return false;
@@ -1928,7 +1940,8 @@ async function ensureFaaDb(force) {
             make: '',
             rawModel: v.m || '',
             model: v.m || (v.t && ICAO_TO_LAYMAN[v.t]) || '',
-            icaoType: v.t || ''
+            icaoType: v.t || faaIcaoFromModel(v.m || ''),
+            source: 'releasable-db'
           });
         }
         faaDbByN = next;
@@ -1993,7 +2006,7 @@ var FAA_MODEL_TO_ICAO = {
   'GV-SP': 'GLF5', 'G550': 'GLF5', 'GIV-X': 'GLF4', 'G450': 'GLF4',
   'GVI': 'GLF6', 'G650': 'GLF6', 'G650ER': 'GLF6', 'G280': 'G280', 'G200': 'G200', 'G150': 'G150',
   'G500': 'GA5C', 'G600': 'GA6C', 'G700': 'GA7C', 'G800': 'GA8C', 'G400': 'GA4C',
-  'BD-100-1A10': 'CL30', 'CL-600-2B16': 'CL60', 'CL-600-2B19': 'CRJ2',
+  'BD-100-1A10': 'CL30', 'BD-700-1A10': 'GLEX', 'BD-700-2A12': 'GLEX', 'PC-12/47E': 'PC12', 'PC1247E': 'PC12', 'MYSTERE-FALCON 50': 'FA50', 'MYSTEREFALCON50': 'FA50', 'CL-600-2B16': 'CL60', 'CL-600-2B19': 'CRJ2',
   'F2TH': 'F2TH', 'FA7X': 'FA7X', 'FA8X': 'FA8X', 'FA50': 'FA50', 'F900': 'F900',
   'PC-12': 'PC12', 'PC-24': 'PC24', 'TBM 700': 'TBM7', 'TBM 850': 'TBM8', 'TBM 900': 'TBM9',
   '172S': 'C172', '172R': 'C172', '182T': 'C182', '206H': 'C206', '208B': 'C208',
