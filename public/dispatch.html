@@ -74,19 +74,23 @@ body{font-family:var(--sans);background:var(--b0);color:var(--t1);min-height:100
    icon columns (OP, STATUS) use fixed pixel widths because they hold same-size pills regardless
    of how wide the table is. fr-sized pill columns get visually huge on wide screens for no
    reason (an "NJ" pill doesn't need 80px). */
-.cols{display:grid;grid-template-columns:0.95fr 28px 52px 1.15fr 1.35fr .95fr .95fr .8fr .8fr .55fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
-.cols.ca-done{display:grid;grid-template-columns:0.95fr 28px 52px 1.15fr 1.35fr .95fr .95fr .85fr .8fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
-.cols.cd-done{display:grid;grid-template-columns:0.95fr 28px 52px 1.15fr 1.35fr .95fr .85fr .8fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
-.cols.ca{grid-template-columns:0.95fr 28px 52px 1.15fr 1.35fr .95fr .95fr .8fr .8fr .55fr}
-.cols.cd{grid-template-columns:0.95fr 28px 52px 1.15fr 1.35fr .95fr .8fr .8fr}
+.cols{display:grid;grid-template-columns:minmax(5.5rem,1.15fr) 28px 52px 1.15fr 1.35fr .95fr .95fr .8fr .8fr .55fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
+.cols.ca-done{display:grid;grid-template-columns:minmax(5.5rem,1.15fr) 28px 52px 1.15fr 1.35fr .95fr .95fr .85fr .8fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
+.cols.cd-done{display:grid;grid-template-columns:minmax(5.5rem,1.15fr) 28px 52px 1.15fr 1.35fr .95fr .85fr .8fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
+.cols.ca{grid-template-columns:minmax(5.5rem,1.15fr) 28px 52px 1.15fr 1.35fr .95fr .95fr .8fr .8fr .55fr}
+.cols.cd{grid-template-columns:minmax(5.5rem,1.15fr) 28px 52px 1.15fr 1.35fr .95fr .8fr .8fr}
 .cols span:first-child{text-align:left;padding-left:16px}
 .bb{flex:1;padding:5px 8px}
-.fr{display:grid;grid-template-columns:0.95fr 28px 52px 1.15fr 1.35fr .95fr .95fr .8fr .8fr .55fr;gap:5px;align-items:center;padding:9px 8px;background:var(--b1);border:1px solid var(--bd);border-radius:7px;margin-bottom:3px;cursor:pointer;transition:all .12s;box-shadow:0 1px 2px rgba(0,0,0,.02);font-size:14px}
-.fr > *{min-width:0;overflow:hidden}
+/* Zoom-safe boards: Cmd+/browser zoom must not clip IDENT/TYPE/times — wrap & grow rows */
+.board .bb{overflow-x:auto;overflow-y:visible}
+.fr .fi,.fr .ft,.fr .ff,.fr .fm,.fr .fe{overflow:visible!important;text-overflow:clip!important;white-space:normal!important}
+
+.fr{display:grid;grid-template-columns:minmax(5.5rem,1.15fr) 28px 52px 1.15fr 1.35fr .95fr .95fr .8fr .8fr .55fr;gap:5px;align-items:start;padding:9px 8px;background:var(--b1);border:1px solid var(--bd);border-radius:7px;margin-bottom:3px;cursor:pointer;transition:all .12s;box-shadow:0 1px 2px rgba(0,0,0,.02);font-size:14px;height:auto;min-height:0}
+.fr > *{min-width:0;overflow:visible}
 /* .fr > .fi keeps overflow:hidden from the parent rule above — badges wrap inside the cell */
-.fr.arr-done{grid-template-columns:0.95fr 28px 52px 1.15fr 1.35fr .95fr .95fr .85fr .8fr}
-.fr.dep{grid-template-columns:0.95fr 28px 52px 1.15fr 1.35fr .95fr .8fr .8fr}
-.fr.dep-simple{grid-template-columns:0.95fr 28px 52px 1.15fr 1.35fr .95fr .85fr .8fr}
+.fr.arr-done{grid-template-columns:minmax(5.5rem,1.15fr) 28px 52px 1.15fr 1.35fr .95fr .95fr .85fr .8fr}
+.fr.dep{grid-template-columns:minmax(5.5rem,1.15fr) 28px 52px 1.15fr 1.35fr .95fr .8fr .8fr}
+.fr.dep-simple{grid-template-columns:minmax(5.5rem,1.15fr) 28px 52px 1.15fr 1.35fr .95fr .85fr .8fr}
 /* OP column cell: holds the operator brand pill (NJ/FX/BA/etc), centered, no overflow.
    Empty cells render as a clean gap rather than collapsing the column. */
 .fr > .fop{display:flex;align-items:center;justify-content:center;overflow:visible}
@@ -104,7 +108,7 @@ body{font-family:var(--sans);background:var(--b0);color:var(--t1);min-height:100
 .fr.dep-ground{background:rgba(220,38,38,.02);border-color:rgba(220,38,38,.1)}
 .fr.dep-gone{background:rgba(220,38,38,.04);border-color:rgba(220,38,38,.12)}
 .chk{width:16px;height:16px;accent-color:var(--green);cursor:pointer;margin:0 auto;display:block}
-.fi{font-family:var(--mono);font-weight:800;font-size:17px;color:var(--cyan);line-height:1.15;position:relative;padding-left:8px;min-width:0;overflow:visible;text-overflow:clip;display:flex;flex-wrap:wrap;align-items:baseline;column-gap:4px;row-gap:2px}
+.fi{font-family:var(--mono);font-weight:800;font-size:17px;color:var(--cyan);line-height:1.25;position:relative;padding-left:8px;min-width:4.5rem;overflow:visible;text-overflow:clip;display:flex;flex-wrap:wrap;align-items:baseline;column-gap:4px;row-gap:2px;white-space:normal;word-break:break-word}
 .fi>*{flex-shrink:0}
 
 .spot-dd{z-index:10000;background:var(--b1);border:1px solid var(--bd);border-radius:4px;box-shadow:0 4px 12px rgba(0,0,0,.3);padding:4px 0;overflow-y:auto;min-width:140px}
@@ -117,9 +121,9 @@ body{font-family:var(--sans);background:var(--b0);color:var(--t1);min-height:100
 .map-tb-btn:active{transform:translateX(0)}
 .zp{cursor:pointer}.fi.zp:hover{color:var(--blue);text-decoration:underline}
 .fi .sub{font-size:11px;font-weight:500;color:var(--t3);flex-basis:100%;width:100%;line-height:1.2}
-.ft{font-family:var(--mono);font-size:17px;font-weight:700;color:var(--t1);text-align:center;line-height:1.2;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:0;overflow:hidden}
+.ft{font-family:var(--mono);font-size:17px;font-weight:700;color:var(--t1);text-align:center;line-height:1.25;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:0;overflow:visible;white-space:normal;word-break:break-word}
 .ft .sub{font-size:10px;font-weight:500;color:var(--t3);display:block}
-.ff{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--t2);text-align:center;line-height:1.2;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:0;overflow:hidden}
+.ff{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--t2);text-align:center;line-height:1.25;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:0;overflow:visible;white-space:normal;word-break:break-word}
 .fr.intl-row{background:linear-gradient(90deg,rgba(220,38,38,.09),rgba(220,38,38,.02));border-color:rgba(220,38,38,.38);box-shadow:inset 3px 0 0 #dc2626}
 .fr.intl-row:hover{background:linear-gradient(90deg,rgba(220,38,38,.14),rgba(220,38,38,.04))}
 .fr.intl-row.arr-active{background:linear-gradient(90deg,rgba(220,38,38,.1),rgba(37,99,235,.03));border-color:rgba(220,38,38,.4)}
@@ -127,8 +131,8 @@ body{font-family:var(--sans);background:var(--b0);color:var(--t1);min-height:100
 .ff.intl{color:var(--red);font-weight:800}
 .ff.intl .sub{color:var(--red);font-weight:600;opacity:.85;font-size:9px}
 .ff .sub{font-size:10px;font-weight:400;color:var(--t3);display:block}
-.fm{font-family:var(--mono);font-size:14px;font-weight:600;color:var(--t2);text-align:center;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:0;overflow:hidden}
-.fe{font-family:var(--mono);font-size:14px;font-weight:700;text-align:center;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:0;overflow:hidden}
+.fm{font-family:var(--mono);font-size:14px;font-weight:600;color:var(--t2);text-align:center;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:0;overflow:visible;white-space:normal;word-break:break-word}
+.fe{font-family:var(--mono);font-size:14px;font-weight:700;text-align:center;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:0;overflow:visible;white-space:normal;word-break:break-word}
 .fe.soon{color:var(--green)}.fe.mid{color:var(--amber)}.fe.far{color:var(--t3)}
 .done-hdr{border-top:2px solid var(--bd)}
 .prog{display:flex;align-items:center;padding:0 2px;width:100%;min-width:20px;min-height:6px}
@@ -213,8 +217,9 @@ body{display:flex;flex-direction:column;min-height:100vh}
   overflow:visible;
   text-overflow:clip;
   white-space:normal;
+  word-break:break-word;
 }
-.fi{overflow:visible!important;text-overflow:clip;word-break:break-all;}
+.fi{overflow:visible!important;text-overflow:clip;word-break:break-word;}
 
 @media (max-width: 1400px){
   .map-row{height:240px;min-height:200px}
@@ -367,9 +372,9 @@ body{display:flex;flex-direction:column;min-height:100vh}
   .fr.dep-simple{grid-template-columns:0.45fr 20px 36px .8fr .95fr .5fr .5fr .65fr!important}
 }
 
-/* MOBILE / PHONE (iOS/Android): hide map+forecast, denser full-width boards for scroll/read.
-   Desktop (>=769px) keeps current map + larger type. Touch phones up to ~900px also hide map. */
-@media (max-width: 768px), ((max-width: 900px) and (hover: none) and (pointer: coarse)){
+/* MOBILE / PHONE only: hide map+forecast. Require hover:none + pointer:coarse so
+   desktop Cmd+/browser-zoom (which shrinks CSS px width) does NOT hide map or hourly chart. */
+@media (max-width: 900px) and (hover: none) and (pointer: coarse){
   .map-row,.resize-bar{display:none!important}
   .boards{grid-template-columns:1fr;gap:0;order:1}
   .done-boards{order:2}

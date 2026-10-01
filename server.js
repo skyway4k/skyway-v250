@@ -1845,88 +1845,59 @@ async function ensureFaaDb(force) {
   if (faaDbLoading) return faaDbLoading;
   faaDbLoading = (async function () {
     var fsP = fs.promises;
-    var { execFile } = require('child_process');
-    var execFileP = function (cmd, args, opts) {
-      return new Promise(function (resolve, reject) {
-        execFile(cmd, args, opts || {}, function (err, stdout, stderr) {
-          if (err) { err.stderr = stderr; reject(err); return; }
-          resolve(stdout);
-        });
-      });
-    };
+    var zlib = require('zlib');
     try {
+      // 1) Bundled official releasable extract (works offline / when registry.faa.gov 403s cloud IPs)
+      var bundled = path.join(__dirname, 'data', 'faa-nreg.json.gz');
+      var bundledAlt = path.join(__dirname, 'data', 'faa-nreg.json');
+      var loadedFrom = null;
+      var jsonTxt = null;
+      try {
+        var gz = await fsP.readFile(bundled);
+        jsonTxt = zlib.gunzipSync(gz).toString('utf8');
+        loadedFrom = 'bundled-gz';
+      } catch (e1) {
+        try {
+          jsonTxt = await fsP.readFile(bundledAlt, 'utf8');
+          loadedFrom = 'bundled-json';
+        } catch (e2) { /* fall through to optional live zip */ }
+      }
+      if (jsonTxt) {
+        var obj = JSON.parse(jsonTxt);
+        var next = new Map();
+        var keys = Object.keys(obj);
+        for (var i = 0; i < keys.length; i++) {
+          var k = keys[i];
+          var v = obj[k] || {};
+          next.set(k, {
+            make: '',
+            rawModel: v.m || '',
+            model: v.m || (v.t && ICAO_TO_LAYMAN[v.t]) || '',
+            icaoType: v.t || ''
+          });
+        }
+        faaDbByN = next;
+        faaDbStatus = { loaded: true, count: next.size, loadedAt: Date.now(), error: null, source: loadedFrom };
+        log('[FAA DB] loaded ' + next.size + ' N-numbers from ' + loadedFrom, 'OK');
+        return faaDbStatus;
+      }
+
+      // 2) Optional live zip (often 403 from Render — best-effort)
       await fsP.mkdir(FAA_DB_DIR, { recursive: true });
       var zipPath = path.join(FAA_DB_DIR, 'ReleasableAircraft.zip');
-      var needDownload = force;
-      try {
-        var st = await fsP.stat(zipPath);
-        if (!st || !st.size || (Date.now() - st.mtimeMs) > FAA_DB_MAX_AGE_MS) needDownload = true;
-      } catch (e) { needDownload = true; }
-
-      if (needDownload) {
-        log('[FAA DB] downloading releasable registry zip…', 'INFO');
-        var res = await fetch(FAA_DB_URL, {
-          headers: { 'User-Agent': 'SkywaySFOBoard/250 (KSFO FBO; +https://skyway-sfo.onrender.com)' }
-        });
-        if (!res.ok) throw new Error('download HTTP ' + res.status);
-        var buf = Buffer.from(await res.arrayBuffer());
-        await fsP.writeFile(zipPath, buf);
-        log('[FAA DB] downloaded ' + Math.round(buf.length / 1048576) + 'MB', 'OK');
-      }
-
-      // Extract MASTER + ACFTREF only
-      await execFileP('unzip', ['-o', '-j', zipPath, 'MASTER.txt', 'ACFTREF.txt', '-d', FAA_DB_DIR], { timeout: 120000 });
-      var refPath = path.join(FAA_DB_DIR, 'ACFTREF.txt');
-      var masterPath = path.join(FAA_DB_DIR, 'MASTER.txt');
-
-      var readline = require('readline');
-      function readCsvLines(filePath, onLine) {
-        return new Promise(function (resolve, reject) {
-          var stream = fs.createReadStream(filePath, { encoding: 'utf8' });
-          var rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
-          var first = true;
-          rl.on('line', function (line) {
-            if (first) { first = false; return; } // skip header
-            if (line) onLine(line);
-          });
-          rl.on('close', resolve);
-          rl.on('error', reject);
-          stream.on('error', reject);
-        });
-      }
-
-      var refMap = new Map(); // code → {make, model}
-      await readCsvLines(refPath, function (rl) {
-        var rp = rl.split(',');
-        if (rp.length < 3) return;
-        var code = String(rp[0] || '').trim();
-        if (!code) return;
-        refMap.set(code, { make: String(rp[1] || '').trim(), model: String(rp[2] || '').trim() });
+      log('[FAA DB] no bundle — trying live download…', 'WARN');
+      var res = await fetch(FAA_DB_URL, {
+        headers: { 'User-Agent': 'SkywaySFOBoard/250 (KSFO FBO; +https://skyway-sfo.onrender.com)' }
       });
-
-      var next = new Map();
-      await readCsvLines(masterPath, function (ml) {
-        var mp = ml.split(',');
-        if (mp.length < 3) return;
-        var nNum = String(mp[0] || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-        if (!nNum) return;
-        var nKey = nNum.charAt(0) === 'N' ? nNum : ('N' + nNum);
-        if (!isNRegIdent(nKey)) return;
-        var mfrCode = String(mp[2] || '').trim();
-        var ref = refMap.get(mfrCode) || {};
-        var rawModel = ref.model || '';
-        var make = ref.make || '';
-        var icao = faaIcaoFromModel(rawModel);
-        var layman = ICAO_TO_LAYMAN[icao] || faaLaymanModel(make, rawModel);
-        next.set(nKey, { make: make, rawModel: rawModel, model: layman, icaoType: icao });
+      if (!res.ok) throw new Error('download HTTP ' + res.status);
+      await fsP.writeFile(zipPath, Buffer.from(await res.arrayBuffer()));
+      var { execFile } = require('child_process');
+      await new Promise(function (resolve, reject) {
+        execFile('unzip', ['-o', '-j', zipPath, 'MASTER.txt', 'ACFTREF.txt', '-d', FAA_DB_DIR], { timeout: 120000 }, function (err) {
+          if (err) reject(err); else resolve();
+        });
       });
-      faaDbByN = next;
-      faaDbStatus = { loaded: true, count: next.size, loadedAt: Date.now(), error: null, source: 'releasable-zip' };
-      log('[FAA DB] indexed ' + next.size + ' N-numbers from MASTER+ACFTREF', 'OK');
-      // Free extracted text (keep zip for refresh)
-      try { await fsP.unlink(masterPath); } catch (e) {}
-      try { await fsP.unlink(refPath); } catch (e) {}
-      return faaDbStatus;
+      throw new Error('live zip extract requires unzip + full parse — ship data/faa-nreg.json.gz');
     } catch (e) {
       faaDbStatus = {
         loaded: faaDbByN.size > 0, count: faaDbByN.size, loadedAt: faaDbStatus.loadedAt || 0,
