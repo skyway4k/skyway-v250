@@ -365,6 +365,42 @@ body{display:flex;flex-direction:column;min-height:100vh}
   .fr.dep-simple{grid-template-columns:0.45fr 20px 36px .8fr .95fr .5fr .5fr .65fr!important}
 }
 
+/* MOBILE / PHONE (iOS/Android): hide map+forecast, denser full-width boards for scroll/read.
+   Desktop (>=769px) keeps current map + larger type. Touch phones up to ~900px also hide map. */
+@media (max-width: 768px), ((max-width: 900px) and (hover: none) and (pointer: coarse)){
+  .map-row,.resize-bar{display:none!important}
+  .boards{grid-template-columns:1fr;gap:0;order:1}
+  .done-boards{order:2}
+  .board:first-child{border-right:none}
+  .boards > .board:first-child{order:1}
+  .boards > .board:last-child{order:2}
+  .bh{padding:5px 8px}
+  .bt,.bc{font-size:10px}
+  .bb{padding:2px 4px}
+  .cols,.cols.ca,.cols.cd,.cols.ca-done,.cols.cd-done{
+    font-size:6.5px!important;padding:3px 4px!important;gap:1px!important;letter-spacing:.25px!important
+  }
+  .fr{
+    font-size:8px!important;padding:3px 4px!important;gap:1px!important;margin-bottom:2px!important;
+    border-radius:4px!important;min-height:0!important;box-shadow:none
+  }
+  .fi{font-size:9px!important;padding-left:4px!important;line-height:1.1}
+  .ft,.ff,.fm,.fe{font-size:8px!important}
+  .fi .sub,.ft .sub,.ff .sub,.sub{font-size:6.5px!important}
+  .pax,.valet{width:auto;min-width:22px;font-size:7px;padding:1px 2px}
+  .pax-ro{font-size:7px}
+  .chk{transform:scale(0.7)}
+  .empty{padding:12px;font-size:9px}
+  .intl-badge,.ramp-flag{font-size:6px!important;padding:0 3px!important}
+  .spot-click{font-size:7px!important}
+  /* arrivals stay unscclipped via existing min-width + overflow-x */
+  .boards > .board:first-child .cols.ca,
+  .boards > .board:first-child .fr.ar,
+  .boards > .board:first-child .fr.arr-active,
+  .done-boards > .board:first-child .cols.ca-done,
+  .done-boards > .board:first-child .fr.arr-done{min-width:520px}
+}
+
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/twemoji.min.js" crossorigin="anonymous"></script>
@@ -406,7 +442,29 @@ body{background:#0b0e14}
 .spot-click{font-size:15px!important;font-weight:800!important}
 .pax-ro{font-size:15px!important}
 .ramp-flag{font-size:11px!important;padding:2px 8px!important}
-@media (max-width:900px){.fr{font-size:15px!important}.fi{font-size:17px!important}}
+/* Wall skin stays large on desktop; phones get dense boards + no map (matches dispatch). */
+@media (max-width: 768px), ((max-width: 900px) and (hover: none) and (pointer: coarse)){
+  .map-row,.resize-bar{display:none!important}
+  .topbar{height:auto;min-height:48px}
+  .brand-n{font-size:14px}
+  .apt{font-size:14px}
+  .apn{font-size:11px}
+  .clk{font-size:11px!important}
+  .pill,.fd{font-size:9px!important;padding:3px 7px!important}
+  .ga{font-size:8px!important;padding:2px 6px!important}
+  .bh{padding:5px 8px}
+  .bt{font-size:10px!important}
+  .bc{font-size:10px!important}
+  .cols{font-size:6.5px!important;padding:3px 4px!important;letter-spacing:.25px!important}
+  .fr{font-size:8px!important;padding:3px 4px!important;min-height:0!important;gap:1px!important}
+  .fr .sub{font-size:6.5px!important}
+  .fi{font-size:9px!important}
+  .ft,.ff,.fm{font-size:8px!important}
+  .fe{font-size:8px!important}
+  .spot-click{font-size:7px!important}
+  .pax-ro{font-size:7px!important}
+  .ramp-flag{font-size:6px!important;padding:0 3px!important}
+}
 </style>
 </head>
 <body>
