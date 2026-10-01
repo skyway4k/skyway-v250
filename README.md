@@ -93,6 +93,10 @@ want a specific bbox tightened and I'll size it against the real formula.
    above wasn't set.
 5. Open `/dispatch`, `/line-room`, `/arrivals`, `/airloom`.
 
+Board schedule window is **through midnight America/Los_Angeles** (not a rolling 8h).
+Optional **SFDPS** second SWIM consumer: set `SWIM_QUEUE_SFDPS` after SWIFT portal
+subscription (see `.env.example`). Optional **Industry LADD** via `LADD_URL`/`LADD_FILE`.
+
 AeroDataBox stays off (`ADB_ENABLED=0` in `.env.example`) until you decide SWIM+OpenSky are
 leaving real gaps. When you do: get a RapidAPI key, set `ADB_ENABLED=1` and `ADB_KEY`, and set
 `ADB_MONTHLY_UNIT_BUDGET` to match your actual plan tier (Basic/free = 600 units/mo).

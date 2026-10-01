@@ -381,7 +381,7 @@ body{display:flex;flex-direction:column;min-height:100vh}
 </head>
 <body>
 <div class="topbar">
-<div class="tb-l"><div class="brand"><div class="brand-i">S</div><span class="brand-n">Skyway</span></div><div class="sep"></div><span style="font-family:var(--sans);font-size:15px;font-weight:700;color:rgba(255,255,255,.65);letter-spacing:3px;text-transform:uppercase">Signature Aviation</span><div class="sep"></div><span class="clk" id="ck">--:--:--</span><span class="ga">GA ONLY</span></div>
+<div class="tb-l"><div class="brand"><div class="brand-i">S</div><span class="brand-n">Skyway</span></div><div class="sep"></div><span style="font-family:var(--sans);font-size:15px;font-weight:700;color:rgba(255,255,255,.65);letter-spacing:3px;text-transform:uppercase">KSFO General Aviation</span><div class="sep"></div><span class="clk" id="ck">--:--:--</span><span class="ga">GA ONLY</span></div>
 <div class="tb-c"><span class="apt" id="ac">KSFO</span><span class="apn" id="an">San Francisco Intl</span></div>
 <div class="tb-r"><div class="pill live" id="pill"><div class="dot"></div><span id="pt">CONNECTING</span></div><div class="sep"></div><div class="fd on" id="fo"><div class="d"></div>OPENSKY</div><div class="fd on" id="fswim" title="FAA SWIM SCDS — free event feed"><div class="d"></div>SWIM</div><div class="fd off" id="fadbPill" style="display:none" title="AeroDataBox — optional, budget-capped supplemental source"><div class="d"></div>ADB</div><div class="sep"></div><div class="fd on" id="fcr" style="cursor:pointer" onclick="showCreditDetails()" title="Click for OpenSky credit details"><div class="d"></div><span id="fcrVal">—</span></div><div class="sep" id="adbSep" style="display:none"></div><div class="fd on" id="fadb" style="display:none;cursor:pointer" onclick="showAdbDetails()" title="Click for AeroDataBox usage details"><div class="d"></div><span id="fadbVal">—</span></div><div class="sep"></div><div class="fd on" id="fidle" style="display:none" title="No browser tabs connected — background polling is paused to save API budget"><div class="d"></div>PAUSED</div><div class="sep"></div><button class="ib" onclick="doRefresh()">⟳</button><button class="ib" onclick="doCenter()">⊕</button></div>
 </div>
@@ -426,7 +426,7 @@ body{display:flex;flex-direction:column;min-height:100vh}
 <div id="ramp-overlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:9998" onclick="if(event.target===this)closeRamp()">
 <div style="position:absolute;top:2%;left:2%;right:2%;bottom:2%;background:var(--b1);border:1px solid var(--bd);border-radius:12px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3);display:flex;flex-direction:column">
 <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--bd);background:var(--b0);flex-shrink:0">
-<span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--t1)">🗺 RAMP VIEW — Signature SFO</span>
+<span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--t1)">🗺 RAMP VIEW — KSFO GA</span>
 <div style="display:flex;gap:8px;align-items:center">
 <span style="font-family:var(--mono);font-size:9px;color:var(--t3)">Drag planes to reassign spots</span>
 <button onclick="openTailLookup()" style="background:var(--blue);color:#fff;border:none;border-radius:4px;padding:5px 10px;font-family:var(--mono);font-size:10px;font-weight:700;cursor:pointer">+ Add Plane</button>
@@ -460,8 +460,8 @@ body{display:flex;flex-direction:column;min-height:100vh}
 </div>
 <div class="resize-bar" id="resizeBar"><div class="resize-grip"></div></div>
 <div class="boards">
-<div class="board"><div class="bh"><div class="bt ar" id="arrTitle">🛬 Scheduled arrivals — next 8 hours</div><span class="bc" id="anc">0</span></div><div class="cols ca"><span>Ident</span><span></span><span></span><span>Type</span><span>From</span><span>Depart</span><span>Arrive</span><span>ETA</span><span>Spot</span><span>PAX</span></div><div class="bb" id="ab"></div></div>
-<div class="board"><div class="bh"><div class="bt de" id="depTitle">🛫 Scheduled departures — next 8 hours</div><span class="bc" id="dnc">0</span></div><div class="cols cd"><span>Ident</span><span></span><span></span><span>Type</span><span>To</span><span>Depart</span><span>ETD</span><span>Spot</span></div><div class="bb" id="db"></div></div>
+<div class="board"><div class="bh"><div class="bt ar" id="arrTitle">🛬 Scheduled arrivals — through midnight PT</div><span class="bc" id="anc">0</span></div><div class="cols ca"><span>Ident</span><span></span><span></span><span>Type</span><span>From</span><span>Depart</span><span>Arrive</span><span>ETA</span><span>Spot</span><span>PAX</span></div><div class="bb" id="ab"></div></div>
+<div class="board"><div class="bh"><div class="bt de" id="depTitle">🛫 Scheduled departures — through midnight PT</div><span class="bc" id="dnc">0</span></div><div class="cols cd"><span>Ident</span><span></span><span></span><span>Type</span><span>To</span><span>Depart</span><span>ETD</span><span>Spot</span></div><div class="bb" id="db"></div></div>
 </div>
 <div class="boards done-boards">
 <div class="board"><div class="bh done-hdr" id="ah" style="display:none"><div class="bt ar" style="opacity:.5">✓ Arrived</div><span class="bc" id="adc">0</span></div><div class="cols ca-done" id="ahcols" style="display:none"><span>Ident</span><span></span><span></span><span>Type</span><span>From</span><span>Depart</span><span>Arrive</span><span>Time</span><span>Spot</span></div><div class="bb" id="adb" style="display:none"></div></div>
@@ -2302,25 +2302,41 @@ function updateBoardTitles(mode){
   var at=document.getElementById('arrTitle');
   var dt=document.getElementById('depTitle');
   if(!at||!dt)return;
-  // Always label the schedule boards as the next-8-hours window (even in ADS-B-live mode
-  // the SWIM/OpenSky schedule rows share this board).
-  at.textContent='🛬 Scheduled arrivals — next 8 hours';
-  dt.textContent='🛫 Scheduled departures — next 8 hours';
+  // Schedule boards: through midnight America/Los_Angeles of the current local day.
+  at.textContent='🛬 Scheduled arrivals — through midnight PT';
+  dt.textContent='🛫 Scheduled departures — through midnight PT';
   if(mode==='adsb-live'){
-    at.title='Scheduled GA/bizjet arrivals in the next 8 hours (plus landed <5m). Live ADS-B fills gaps when SWIM is quiet.';
-    dt.title='Scheduled GA/bizjet departures in the next 8 hours. Live ADS-B fills gaps when SWIM is quiet.';
+    at.title='GA/bizjet arrivals filed/estimated through midnight Pacific (plus landed <5m). Live ADS-B fills position/progress when SWIM is quiet.';
+    dt.title='GA/bizjet departures filed/estimated through midnight Pacific. Live ADS-B fills gaps when SWIM is quiet.';
   } else {
-    at.title='Filed/estimated arrivals within the next 8 hours. Landed flights drop after 5 minutes.';
-    dt.title='Filed/estimated departures within the next 8 hours.';
+    at.title='Filed/estimated arrivals through midnight America/Los_Angeles. Landed flights drop after 5 minutes.';
+    dt.title='Filed/estimated departures through midnight America/Los_Angeles.';
   }
 }
-var BOARD_WINDOW_MS=8*60*60*1000;
-function inNext8h(iso,now){
-  if(!iso)return null; // unknown — caller decides
+function ptDateStr(ms){
+  return new Date(ms).toLocaleDateString('en-CA',{timeZone:'America/Los_Angeles'});
+}
+function endOfDayPTMs(now){
+  now=now||Date.now();
+  var startDate=ptDateStr(now);
+  for(var i=1;i<=48;i++){
+    var probe=now+i*3600000;
+    if(ptDateStr(probe)!==startDate){
+      var lo=probe-3600000,hi=probe;
+      while(hi-lo>500){
+        var mid=Math.floor((lo+hi)/2);
+        if(ptDateStr(mid)===startDate)lo=mid;else hi=mid;
+      }
+      return hi;
+    }
+  }
+  return now+24*3600000;
+}
+function inBoardDayWindow(iso,now){
+  if(!iso)return null; // unknown — caller decides (keep)
   var t=new Date(iso).getTime();
   if(!t||isNaN(t))return null;
-  var d=t-now;
-  return d<=BOARD_WINDOW_MS;
+  return t<endOfDayPTMs(now);
 }
 function fetchBoards(){
   console.log('[BOARDS] Fetching arrivals...');
@@ -2353,10 +2369,9 @@ function fetchBoards(){
         // else: drop after 5 minutes
         continue;
       }
-      // Scheduled window: only show arrivals with ETA in the next 8 hours (keep if no time).
-      var win=inNext8h(f.arriveISO,now);
+      // Scheduled window: through midnight America/Los_Angeles (keep if no time).
+      var win=inBoardDayWindow(f.arriveISO,now);
       if(win===false)continue;
-      if(arrTime>0&&arrTime-now>BOARD_WINDOW_MS)continue;
       active.push(f);
     }
     // Sort active: soonest arrival first
@@ -2392,8 +2407,8 @@ function fetchBoards(){
         if(depMs>0&&(nowDep-depMs)<5*60000)completed.push(f);
         continue;
       }
-      // Scheduled window: next 8 hours when a depart time exists.
-      var winD=inNext8h(f.departISO,nowDep);
+      // Scheduled window: through midnight PT when a depart time exists.
+      var winD=inBoardDayWindow(f.departISO,nowDep);
       if(winD===false)continue;
       // Also drop already-past ETD that aren't marked departed (stale schedule).
       if(f.departISO){
@@ -3258,7 +3273,7 @@ function rebuildRampMarkerIcons(){
   }
 }
 
-// Spot locations on the Signature SFO ramp (lat/lng from satellite)
+// Spot locations on the KSFO GA ramp (lat/lng from satellite)
 var RAMP_SPOTS={
 '42 West 1':{lat:37.629350,lng:-122.388700,angle:280},
 '42 West 2':{lat:37.629200,lng:-122.388500,angle:280},
@@ -4631,7 +4646,7 @@ function showShiftReport(){
     var h='<div style="font-family:Arial,sans-serif">';
     h+='<table style="width:100%;border-collapse:collapse;margin-bottom:12px;font-size:11px">';
     h+='<tr><td style="border:1px solid #333;padding:4px 8px;background:#f5f5f5;font-weight:700;width:100px">DATE</td><td style="border:1px solid #333;padding:4px 8px">'+dateStr+' '+timeStr+'</td><td style="border:1px solid #333;padding:4px 8px;background:#f5f5f5;font-weight:700;width:80px">SHIFT</td><td style="border:1px solid #333;padding:4px 8px">'+shift+'</td></tr>';
-    h+='<tr><td style="border:1px solid #333;padding:4px 8px;background:#f5f5f5;font-weight:700">COMPUTED BY</td><td style="border:1px solid #333;padding:4px 8px">Signature Skyway</td><td style="border:1px solid #333;padding:4px 8px;background:#f5f5f5;font-weight:700">TOTAL</td><td style="border:1px solid #333;padding:4px 8px;font-weight:700">'+filtered.length+'</td></tr>';
+    h+='<tr><td style="border:1px solid #333;padding:4px 8px;background:#f5f5f5;font-weight:700">COMPUTED BY</td><td style="border:1px solid #333;padding:4px 8px">Skyway KSFO GA</td><td style="border:1px solid #333;padding:4px 8px;background:#f5f5f5;font-weight:700">TOTAL</td><td style="border:1px solid #333;padding:4px 8px;font-weight:700">'+filtered.length+'</td></tr>';
     h+='</table>';
     // Main table
     h+='<table style="width:100%;border-collapse:collapse;font-size:10px;font-family:Arial,sans-serif">';
@@ -4695,7 +4710,7 @@ function showShiftReport(){
         if(hrs>0&&hrs<=8)exp.push(ar);
       }
       exp.sort(function(a,b){return(a.arriveISO||'').localeCompare(b.arriveISO||'');});
-      if(exp.length===0){document.getElementById('shift-expected').innerHTML='<div style="color:#888;padding:10px;text-align:center;font-style:italic">No expected arrivals in next 8 hours</div>';return;}
+      if(exp.length===0){document.getElementById('shift-expected').innerHTML='<div style="color:#888;padding:10px;text-align:center;font-style:italic">No expected arrivals through midnight PT</div>';return;}
       // Pre-populate spot map with all current ground aircraft so expected arrivals don't collide
       if(!window._globalSpotMap)window._globalSpotMap={};
       // Clear and rebuild from scratch (ground aircraft first)
