@@ -41,6 +41,10 @@ services:
         sync: false
       - key: SWIM_QUEUE
         sync: false
+      - key: SWIM_URL
+        sync: false
+      - key: SWIM_VPN
+        sync: false
       - key: ADSB_PRIMARY
         value: adsb.lol
       - key: ADB_ENABLED

@@ -627,6 +627,33 @@ function fmtTimeLA(iso) {
   if (!iso) return '';
   return new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Los_Angeles' });
 }
+// Normalize airport codes so TFMS 3-letter (SFO) matches AIRPORT_ICAO (KSFO).
+function normAirport(code) {
+  if (!code) return '';
+  var c = String(code).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (c.length === 3 && c !== 'KSFO') return 'K' + c; // US domestic IATA→ICAO guess; KSFO filter uses AIRPORT_ICAO
+  return c;
+}
+function airportMatch(code, target) {
+  var a = normAirport(code), b = normAirport(target);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  // also match 3-letter vs K+3
+  if (a.length === 4 && a[0] === 'K' && a.slice(1) === b) return true;
+  if (b.length === 4 && b[0] === 'K' && b.slice(1) === a) return true;
+  return false;
+}
+function parseIsoLoose(s) {
+  if (!s) return null;
+  var t = Date.parse(s);
+  if (!isNaN(t)) return new Date(t).toISOString();
+  // TFMS sometimes omits Z; treat as UTC if looks like ISO without zone
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) {
+    t = Date.parse(s.endsWith('Z') ? s : s + 'Z');
+    if (!isNaN(t)) return new Date(t).toISOString();
+  }
+  return null;
+}
 function handleSwimMsg(message) {
   swimStats.msgs++;
   var payload = '';
@@ -636,29 +663,66 @@ function handleSwimMsg(message) {
     if (!payload && message.getSdtContainer) payload = message.getSdtContainer().getValue();
   } catch (e) { }
   if (!payload) return;
+  // FDPS-style event types + TFMS R14 flight-plan / amendment / dep-arr notification cues.
+  // TODO(LADD): Limited Aircraft Data Distribution (LADD) still required for some GA tail/
+  // registration enrichment — TFMS flight plans alone may omit registration; keep ADS-B fallback.
   var type = 'UNKNOWN';
-  if (payload.indexOf('DepartureInformation') >= 0 || payload.indexOf('flightDeparture') >= 0) type = 'DEPARTURE';
-  else if (payload.indexOf('ArrivalInformation') >= 0 || payload.indexOf('flightArrival') >= 0) type = 'ARRIVAL';
+  if (payload.indexOf('DepartureInformation') >= 0 || payload.indexOf('flightDeparture') >= 0 ||
+      payload.indexOf('actualDeparture') >= 0 || payload.indexOf('FlightDeparture') >= 0) type = 'DEPARTURE';
+  else if (payload.indexOf('ArrivalInformation') >= 0 || payload.indexOf('flightArrival') >= 0 ||
+      payload.indexOf('actualArrival') >= 0 || payload.indexOf('FlightArrival') >= 0) type = 'ARRIVAL';
   else if (payload.indexOf('EnRoute') >= 0 || payload.indexOf('enRoute') >= 0) type = 'EN_ROUTE';
-  var cs = xval(payload, 'aircraftIdentification', 'callsign');
-  var orig = xval(payload, 'departureAerodrome.*?locationIndicator', 'departureAirport', 'originAirport');
-  var dest = xval(payload, 'destinationAerodrome.*?locationIndicator', 'arrivalAirport', 'destinationAirport');
-  var acType = xval(payload, 'aircraftType', 'typeDesignator');
-  var tail = xval(payload, 'registration', 'aircraftRegistration');
+  else if (payload.indexOf('flightCreate') >= 0 || payload.indexOf('flightModify') >= 0 ||
+      payload.indexOf('FlightPlan') >= 0 || payload.indexOf('flightPlan') >= 0 ||
+      payload.indexOf('tfmData') >= 0 || payload.indexOf('TFMData') >= 0 ||
+      payload.indexOf('commonCompositeFlightId') >= 0) type = 'FLIGHT_PLAN';
+  var cs = xval(payload, 'aircraftIdentification', 'callSign', 'callsign');
+  var orig = xval(payload, 'departureAerodrome.*?locationIndicator', 'departureAirport', 'originAirport', 'departureAerodrome');
+  var dest = xval(payload, 'destinationAerodrome.*?locationIndicator', 'arrivalAirport', 'destinationAirport', 'destinationAerodrome');
+  var acType = xval(payload, 'aircraftType', 'typeDesignator', 'aircraftSpecification');
+  var tail = xval(payload, 'registration', 'aircraftRegistration', 'tailNumber');
+  var etd = parseIsoLoose(xval(payload, 'earliestRunwayDepartureTime', 'estimatedOffBlockTime', 'EOBT', 'departureDateTime', 'gateDepartureTime', 'estimatedDepartureTime'));
+  var eta = parseIsoLoose(xval(payload, 'earliestRunwayArrivalTime', 'estimatedArrivalTime', 'ETA', 'arrivalDateTime', 'gateArrivalTime', 'estimatedTimeOfArrival'));
   var nowISO = new Date().toISOString();
-  if (!cs) return;
+  if (!cs && !tail) return;
+  // Client-side KSFO filter: only board flights with origin OR destination matching home airport.
+  var touchesHome = airportMatch(orig, AIRPORT_ICAO) || airportMatch(dest, AIRPORT_ICAO);
+  if (!touchesHome) return;
   var key = (tail || cs).toUpperCase().replace(/[^A-Z0-9]/g, '');
-  if (type === 'ARRIVAL' && dest === AIRPORT_ICAO) {
+  var ident = tail || cs;
+  if (type === 'ARRIVAL' && airportMatch(dest, AIRPORT_ICAO)) {
     swimStats.arrivals++;
-    upsertMovement('arrivals', key, { ident: tail || cs, callsign: cs, type: acType || '', from: orig || '', arrived: true, arriveISO: nowISO, arrive: fmtTimeLA(nowISO), source: 'swim' });
-  } else if (type === 'DEPARTURE' && orig === AIRPORT_ICAO) {
+    upsertMovement('arrivals', key, { ident: ident, callsign: cs || '', type: acType || '', from: orig || '', arrived: true, arriveISO: eta || nowISO, arrive: fmtTimeLA(eta || nowISO), source: 'swim' });
+  } else if (type === 'DEPARTURE' && airportMatch(orig, AIRPORT_ICAO)) {
     swimStats.departures++;
-    upsertMovement('departures', key, { ident: tail || cs, callsign: cs, type: acType || '', to: dest || '', departed: true, departISO: nowISO, depart: fmtTimeLA(nowISO), source: 'swim' });
-  } else if (type === 'DEPARTURE' && dest === AIRPORT_ICAO) {
+    upsertMovement('departures', key, { ident: ident, callsign: cs || '', type: acType || '', to: dest || '', departed: true, departISO: etd || nowISO, depart: fmtTimeLA(etd || nowISO), source: 'swim' });
+  } else if (type === 'DEPARTURE' && airportMatch(dest, AIRPORT_ICAO)) {
     // A departure ping whose destination IS us = an inbound flight that just left its origin —
     // this is our earliest-possible signal, before SWIM ever sends an arrival ping.
     swimStats.arrivals++;
-    upsertMovement('arrivals', key, { ident: tail || cs, callsign: cs, type: acType || '', from: orig || '', arrived: false, departISO: nowISO, depart: fmtTimeLA(nowISO), source: 'swim' });
+    upsertMovement('arrivals', key, { ident: ident, callsign: cs || '', type: acType || '', from: orig || '', arrived: false, departISO: etd || nowISO, depart: fmtTimeLA(etd || nowISO), arriveISO: eta || '', arrive: eta ? fmtTimeLA(eta) : '', source: 'swim' });
+  } else if (type === 'FLIGHT_PLAN' || type === 'EN_ROUTE' || type === 'UNKNOWN') {
+    // TFMS R14 flight plans / amendments: schedule-style rows with future-ish ETD/ETA when present.
+    if (airportMatch(dest, AIRPORT_ICAO)) {
+      swimStats.arrivals++;
+      upsertMovement('arrivals', key, {
+        ident: ident, callsign: cs || '', type: acType || '', from: orig || '',
+        arrived: false,
+        arriveISO: eta || '', arrive: eta ? fmtTimeLA(eta) : '',
+        departISO: etd || '', depart: etd ? fmtTimeLA(etd) : '',
+        source: 'swim'
+      });
+    }
+    if (airportMatch(orig, AIRPORT_ICAO)) {
+      swimStats.departures++;
+      upsertMovement('departures', key, {
+        ident: ident, callsign: cs || '', type: acType || '', to: dest || '',
+        departed: false,
+        departISO: etd || '', depart: etd ? fmtTimeLA(etd) : '',
+        arriveISO: eta || '', arrive: eta ? fmtTimeLA(eta) : '',
+        source: 'swim'
+      });
+    }
   }
   broadcast({ type: 'board' });
 }
