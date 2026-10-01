@@ -70,32 +70,31 @@ body{font-family:var(--sans);background:var(--b0);color:var(--t1);min-height:100
 .bt{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:1.2px}
 .bt.ar{color:var(--blue)}.bt.de{color:var(--red)}
 .bc{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--t3)}
-/* Column system. IDENT is kept intrinsic/tight; data columns share the remaining space while
-   OP and STATUS stay compact because their pills do not need a wide empty track. */
-.cols{display:grid;grid-template-columns:minmax(5.5rem,1.15fr) 28px 52px 1.15fr 1.35fr .95fr .95fr .8fr .8fr .55fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
-.cols.ca-done{display:grid;grid-template-columns:minmax(5.5rem,1.15fr) 28px 52px 1.15fr 1.35fr .95fr .95fr .85fr .8fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
-.cols.cd-done{display:grid;grid-template-columns:minmax(5.5rem,1.15fr) 28px 52px 1.15fr 1.35fr .95fr .85fr .8fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
-.cols.ca{grid-template-columns:minmax(5.5rem,1.15fr) 28px 52px 1.15fr 1.35fr .95fr .95fr .8fr .8fr .55fr}
-.cols.cd{grid-template-columns:minmax(5.5rem,1.15fr) 28px 52px 1.15fr 1.35fr .95fr .8fr .8fr}
+/* Column system. IDENT stays intrinsic/tight; operator/status tracks are max-content so
+   empty badge cells collapse and any badges sit immediately before TYPE. */
+.cols{display:grid;grid-template-columns:minmax(5.5rem,1.15fr) max-content max-content 1.15fr 1.35fr .95fr .95fr .8fr .8fr .55fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
+.cols.ca-done{display:grid;grid-template-columns:minmax(5.5rem,1.15fr) max-content max-content 1.15fr 1.35fr .95fr .95fr .85fr .8fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
+.cols.cd-done{display:grid;grid-template-columns:minmax(5.5rem,1.15fr) max-content max-content 1.15fr 1.35fr .95fr .85fr .8fr;gap:5px;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);border-bottom:1px solid var(--bd);text-align:center;background:var(--b2)}
+.cols.ca{grid-template-columns:minmax(5.5rem,1.15fr) max-content max-content 1.15fr 1.35fr .95fr .95fr .8fr .8fr .55fr}
+.cols.cd{grid-template-columns:minmax(5.5rem,1.15fr) max-content max-content 1.15fr 1.35fr .95fr .8fr .8fr}
 .cols span:first-child{text-align:left;padding-left:16px}
 .bb{flex:1;padding:5px 8px}
 /* Zoom-safe boards: Cmd+/browser zoom must not clip IDENT/TYPE/times — wrap & grow rows */
 .board .bb{overflow-x:auto;overflow-y:visible}
 .fr .fi,.fr .ft,.fr .ff,.fr .fm,.fr .fe{overflow:visible!important;text-overflow:clip!important;white-space:normal!important}
 
-.fr{display:grid;grid-template-columns:minmax(5.5rem,1.15fr) 28px 52px 1.15fr 1.35fr .95fr .95fr .8fr .8fr .55fr;gap:5px;align-items:start;padding:9px 8px;background:var(--b1);border:1px solid var(--bd);border-radius:7px;margin-bottom:3px;cursor:pointer;transition:all .12s;box-shadow:0 1px 2px rgba(0,0,0,.02);font-size:14px;height:auto;min-height:0}
+.fr{display:grid;grid-template-columns:minmax(5.5rem,1.15fr) max-content max-content 1.15fr 1.35fr .95fr .95fr .8fr .8fr .55fr;gap:5px;align-items:start;padding:9px 8px;background:var(--b1);border:1px solid var(--bd);border-radius:7px;margin-bottom:3px;cursor:pointer;transition:all .12s;box-shadow:0 1px 2px rgba(0,0,0,.02);font-size:14px;height:auto;min-height:0}
 .fr > *{min-width:0;overflow:visible}
 /* .fr > .fi keeps overflow:hidden from the parent rule above — badges wrap inside the cell */
-.fr.arr-done{grid-template-columns:minmax(5.5rem,1.15fr) 28px 52px 1.15fr 1.35fr .95fr .95fr .85fr .8fr}
-.fr.dep{grid-template-columns:minmax(5.5rem,1.15fr) 28px 52px 1.15fr 1.35fr .95fr .8fr .8fr}
-.fr.dep-simple{grid-template-columns:minmax(5.5rem,1.15fr) 28px 52px 1.15fr 1.35fr .95fr .85fr .8fr}
-/* OP column cell: holds the operator brand pill (NJ/FX/BA/etc), centered, no overflow.
-   Empty cells render as a clean gap rather than collapsing the column. */
+.fr.arr-done{grid-template-columns:minmax(5.5rem,1.15fr) max-content max-content 1.15fr 1.35fr .95fr .95fr .85fr .8fr}
+.fr.dep{grid-template-columns:minmax(5.5rem,1.15fr) max-content max-content 1.15fr 1.35fr .95fr .8fr .8fr}
+.fr.dep-simple{grid-template-columns:minmax(5.5rem,1.15fr) max-content max-content 1.15fr 1.35fr .95fr .85fr .8fr}
+/* OP column cell: holds the operator brand pill (NJ/FX/BA/etc), centered. The max-content
+   track collapses when this cell is empty, keeping TYPE close to IDENT. */
 .fr > .fop{display:flex;align-items:center;justify-content:center;overflow:visible}
 .fr > .fop > span{margin:0 !important}
-/* STATUS column cell: holds QT, MED (medical cross), VIP badges in a horizontal row.
-   Each row has 0–3 badges; the cell flows them with small gaps. Strip per-badge left-margin
-   so badges don't drift right when they're in this dedicated cell. */
+/* STATUS column cell: holds QT, MED (medical cross), VIP/customs badges. The cell flows
+   badges with small gaps; strip per-badge left-margin so they stay beside IDENT. */
 .fr > .fst{display:flex;align-items:center;justify-content:center;gap:3px;overflow:visible;flex-wrap:wrap}
 .fr > .fst > span{margin:0 !important}
 .fr:hover{background:var(--b2);border-color:var(--bd)}
@@ -122,9 +121,9 @@ body{font-family:var(--sans);background:var(--b0);color:var(--t1);min-height:100
 .ft{font-family:var(--mono);font-size:17px;font-weight:700;color:var(--t1);text-align:center;line-height:1.25;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:0;overflow:visible;white-space:normal;word-break:break-word}
 .ft .sub{font-size:10px;font-weight:500;color:var(--t3);display:block}
 .ff{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--t2);text-align:center;line-height:1.25;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:0;overflow:visible;white-space:normal;word-break:break-word}
-.fr.intl-row{background:linear-gradient(90deg,rgba(220,38,38,.09),rgba(220,38,38,.02));border-color:rgba(220,38,38,.38);box-shadow:inset 3px 0 0 #dc2626}
-.fr.intl-row:hover{background:linear-gradient(90deg,rgba(220,38,38,.14),rgba(220,38,38,.04))}
-.fr.intl-row.arr-active{background:linear-gradient(90deg,rgba(220,38,38,.1),rgba(37,99,235,.03));border-color:rgba(220,38,38,.4)}
+.fr.intl-row:not(.intl-arrival-row){background:linear-gradient(90deg,rgba(220,38,38,.09),rgba(220,38,38,.02));border-color:rgba(220,38,38,.38);box-shadow:inset 3px 0 0 #dc2626}
+.fr.intl-row:not(.intl-arrival-row):hover{background:linear-gradient(90deg,rgba(220,38,38,.14),rgba(220,38,38,.04))}
+.fr.intl-row:not(.intl-arrival-row).arr-active{background:linear-gradient(90deg,rgba(220,38,38,.1),rgba(37,99,235,.03));border-color:rgba(220,38,38,.4)}
 .intl-badge{display:inline-block;background:#dc2626;color:#fff;font-size:8px;font-weight:900;padding:1px 5px;border-radius:3px;letter-spacing:.5px;line-height:1;margin-left:3px;vertical-align:middle;box-shadow:0 0 6px rgba(220,38,38,.35)}
 .ff.intl{color:var(--red);font-weight:800}
 .ff.intl .sub{color:var(--red);font-weight:600;opacity:.85;font-size:9px}
@@ -408,14 +407,13 @@ body{display:flex;flex-direction:column;min-height:100vh}
 }
 
 
-/* Final board sizing: IDENT stays at its intrinsic tail width instead of consuming a
-   share of the board. Every data column has a floor and the same 1fr growth rule, so
-   ETA/spot/time columns remain present; when zoom or a narrow viewport exhausts the
-   floors the board scrolls as one unit and cells wrap rather than clipping text. */
+/* Final board sizing: IDENT and badge tracks are intrinsic. Data columns retain floors and
+   grow with 1fr, so ETA/spot/time columns remain present; at zoom/narrow widths the board
+   scrolls as one unit and cells wrap rather than clipping text. */
 :root{
-  --ident-track:minmax(4.25rem,4.75rem);
-  --op-track:minmax(28px,28px);
-  --status-track:minmax(44px,52px);
+  --ident-track:max-content;
+  --op-track:max-content;
+  --status-track:max-content;
   --type-track:minmax(3rem,1fr);
   --route-track:minmax(3rem,1fr);
   --time-track:minmax(3rem,1fr);
@@ -446,10 +444,12 @@ body{display:flex;flex-direction:column;min-height:100vh}
 }
 .fr.intl-row.intl-arrival-row.arr-active{background:linear-gradient(90deg,rgba(37,99,235,.30),rgba(37,99,235,.14) 68%,rgba(37,99,235,.06));border-color:rgba(37,99,235,.58);box-shadow:inset 5px 0 0 #2563eb,0 1px 2px rgba(37,99,235,.12)}
 .fr.intl-row.intl-arrival-row:hover{background:linear-gradient(90deg,rgba(37,99,235,.38),rgba(37,99,235,.18) 68%,rgba(37,99,235,.08))}
+.fr.intl-arrival-row .intl-badge{background:#2563eb;box-shadow:0 0 6px rgba(37,99,235,.35)}
+.fr.intl-arrival-row .ff.intl,.fr.intl-arrival-row .ff.intl .sub{color:var(--blue)}
 .customs-badge{display:inline-flex;align-items:center;justify-content:center;width:20px;height:18px;margin:0!important;border-radius:3px;background:#2563eb;color:#fff;font-size:12px;line-height:1;box-shadow:0 0 5px rgba(37,99,235,.35)}
 @media (max-width:900px){
   :root{
-    --ident-track:minmax(3.5rem,4rem);--op-track:minmax(24px,24px);--status-track:minmax(40px,44px);
+    --ident-track:max-content;--op-track:max-content;--status-track:max-content;
     --type-track:minmax(2.75rem,1fr);--route-track:minmax(2.75rem,1fr);--time-track:minmax(2.5rem,1fr);
     --eta-track:minmax(2.25rem,1fr);--spot-track:minmax(2.75rem,1fr);--pax-track:minmax(2rem,1fr)
   }
@@ -458,7 +458,7 @@ body{display:flex;flex-direction:column;min-height:100vh}
 }
 @media (max-width:500px){
   :root{
-    --ident-track:minmax(3.5rem,4rem);--op-track:minmax(22px,22px);--status-track:minmax(40px,40px);
+    --ident-track:max-content;--op-track:max-content;--status-track:max-content;
     --type-track:minmax(2.5rem,1fr);--route-track:minmax(2.75rem,1fr);--time-track:minmax(2.5rem,1fr);
     --eta-track:minmax(2.25rem,1fr);--spot-track:minmax(2.5rem,1fr);--pax-track:minmax(1.75rem,1fr)
   }
@@ -466,14 +466,14 @@ body{display:flex;flex-direction:column;min-height:100vh}
 }
 @media (max-width:429px){
   :root{
-    --ident-track:minmax(3.5rem,4rem);--op-track:minmax(20px,20px);--status-track:minmax(36px,36px);
+    --ident-track:max-content;--op-track:max-content;--status-track:max-content;
     --type-track:minmax(2.25rem,1fr);--route-track:minmax(2.5rem,1fr);--time-track:minmax(2.25rem,1fr);
     --eta-track:minmax(2rem,1fr);--spot-track:minmax(2.5rem,1fr);--pax-track:minmax(1.65rem,1fr)
   }
 }
 @media (max-width:900px) and (hover:none) and (pointer:coarse){
   :root{
-    --ident-track:minmax(3rem,3.5rem);--op-track:minmax(20px,20px);--status-track:minmax(36px,36px);
+    --ident-track:max-content;--op-track:max-content;--status-track:max-content;
     --type-track:minmax(2.25rem,1fr);--route-track:minmax(2.5rem,1fr);--time-track:minmax(2.25rem,1fr);
     --eta-track:minmax(2rem,1fr);--spot-track:minmax(2.5rem,1fr);--pax-track:minmax(1.65rem,1fr)
   }
