@@ -513,6 +513,44 @@ body{display:flex;flex-direction:column;min-height:100vh}
 @media (max-width:500px){
   .board>.bh,.board>.cols,.board>.bb{min-width:520px}
 }
+
+/* iOS / phone landscape: side-by-side half-width boards clip IDENT/ETA/PAX (and
+   overflow-y:hidden + overflow-x:auto is a known iOS Safari scroll failure).
+   Stack boards full-width so every column is usable; keep per-board x-scroll as
+   a safety net when content still exceeds the viewport. Desktop landscape unchanged. */
+.board{
+  overflow-x:auto;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior-x:contain;
+}
+@media (orientation:landscape) and (max-height:500px) and (hover:none) and (pointer:coarse),
+       (orientation:landscape) and (max-width:1100px) and (hover:none) and (pointer:coarse){
+  .boards,.done-boards{
+    grid-template-columns:minmax(0,1fr)!important;
+    gap:2px;
+    width:100%;
+    min-width:0;
+  }
+  .board{
+    max-width:100%;
+    min-width:0;
+    border-right:none!important;
+    border-top:2px solid var(--bd);
+    overflow-x:auto;
+    overflow-y:visible;
+    -webkit-overflow-scrolling:touch;
+  }
+  .boards > .board:first-child,
+  .done-boards > .board:first-child{order:1;border-right:none!important}
+  .boards > .board:last-child,
+  .done-boards > .board:last-child{order:2}
+  .board>.bh,.board>.cols,.board>.bb{
+    width:100%;
+    min-width:560px;
+  }
+  .map-row,.resize-bar{display:none!important}
+}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/twemoji.min.js" crossorigin="anonymous"></script>
