@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Skyway — Dispatch</title>
+<title>Skyway — KSFO GA</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -551,6 +551,67 @@ body{display:flex;flex-direction:column;min-height:100vh}
   }
   .map-row,.resize-bar{display:none!important}
 }
+
+/* === Multi-view tabs (Dispatch | Line room | Lobby | GM) === */
+.view-menu-wrap{position:relative}
+.view-menu-btn{width:30px;height:30px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-radius:6px;cursor:pointer;color:rgba(255,255,255,.7);font-size:14px;font-weight:800;transition:all .15s}
+.view-menu-btn:hover,.view-menu-btn.open{border-color:rgba(96,165,250,.55);color:#93c5fd;background:rgba(59,130,246,.18)}
+.view-menu-dd{display:none;position:absolute;right:0;top:34px;min-width:168px;background:#1e222e;border:1px solid rgba(255,255,255,.12);border-radius:8px;box-shadow:0 12px 32px rgba(0,0,0,.45);padding:6px;z-index:200}
+.view-menu-dd.open{display:block}
+.view-menu-dd a{display:block;padding:8px 10px;border-radius:5px;font-family:var(--mono);font-size:11px;font-weight:700;color:rgba(255,255,255,.72);text-decoration:none;letter-spacing:.3px}
+.view-menu-dd a:hover{background:rgba(59,130,246,.2);color:#fff}
+.view-menu-dd a.active{background:rgba(59,130,246,.28);color:#93c5fd}
+.view-badge{font-family:var(--mono);font-size:10px;font-weight:800;color:#60a5fa;letter-spacing:1.2px;background:rgba(96,165,250,.12);border:1px solid rgba(96,165,250,.3);border-radius:5px;padding:3px 8px;white-space:nowrap}
+.est-tag{font-size:7px;font-weight:700;color:var(--t3);letter-spacing:.3px;text-transform:uppercase}
+.vip-hint{font-size:8px;font-weight:700;color:#a855f7;line-height:1.2}
+.gm-cost{font-family:var(--mono);font-weight:700;color:var(--amber)}
+.gm-gal{font-family:var(--mono);font-weight:700;color:var(--cyan)}
+.fuel-price-pill{font-family:var(--mono);font-size:9px;font-weight:700;color:rgba(255,255,255,.55);padding:2px 7px;border-radius:6px;border:1px solid rgba(255,255,255,.1);white-space:nowrap}
+body.view-lobby .cols.ca,body.view-lobby .cols.cd,body.view-lobby .cols.ca-done,body.view-lobby .cols.cd-done,
+body.view-lobby .fr,body.view-lobby .fr.dep,body.view-lobby .fr.dep-simple,body.view-lobby .fr.arr-done{
+  grid-template-columns:minmax(5.5rem,1.4fr) 1.1fr .9fr!important;
+}
+body.view-gm .cols.ca,body.view-gm .fr:not(.dep):not(.dep-simple):not(.arr-done){
+  grid-template-columns:minmax(5rem,1.1fr) max-content max-content 1fr 1.2fr .55fr .7fr .75fr .85fr!important;
+}
+body.view-gm .cols.cd,body.view-gm .fr.dep,body.view-gm .fr.dep-simple,
+body.view-gm .cols.ca-done,body.view-gm .fr.arr-done,
+body.view-gm .cols.cd-done{
+  grid-template-columns:minmax(5rem,1.1fr) max-content max-content 1fr 1.2fr .55fr .7fr .75fr .85fr!important;
+}
+body.view-line-room{background:#0b0e14;--t3:#5a6072;--bd:#a8adb8}
+body.view-line-room .topbar{height:74px;min-height:74px}
+body.view-line-room .brand-n{font-size:22px}
+body.view-line-room .apt{font-size:22px}
+body.view-line-room .apn{font-size:15px}
+body.view-line-room .clk{font-size:16px!important}
+body.view-line-room .pill,body.view-line-room .fd{font-size:13px!important;padding:6px 12px!important}
+body.view-line-room .board{background:#161b26}
+body.view-line-room .bh{padding:14px 16px}
+body.view-line-room .bt{font-size:16px!important}
+body.view-line-room .bc{font-size:15px!important}
+body.view-line-room .cols{font-size:13px!important;padding:12px 14px!important;letter-spacing:1px!important;color:#c3c9d6!important}
+body.view-line-room .fr{font-size:17px!important;padding:16px 14px!important;min-height:64px;gap:10px!important;background:#1b2130;border-color:#333c52}
+body.view-line-room .fr .sub{font-size:12px!important;color:#9aa3b8!important}
+body.view-line-room .fi{font-size:19px!important;font-weight:800!important;color:#f4f6fb!important}
+body.view-line-room .ft,body.view-line-room .ff,body.view-line-room .fm{font-size:15px!important}
+body.view-line-room .fe{font-size:16px!important;font-weight:800!important}
+body.view-line-room .spot-click{font-size:15px!important;font-weight:800!important}
+body.view-line-room .pax-ro{font-size:15px!important}
+@media (max-width:900px) and (hover:none) and (pointer:coarse){
+  body.view-line-room .topbar{height:auto;min-height:48px}
+  body.view-line-room .brand-n,body.view-line-room .apt{font-size:14px}
+  body.view-line-room .apn{font-size:11px}
+  body.view-line-room .clk{font-size:11px!important}
+  body.view-line-room .pill,body.view-line-room .fd{font-size:9px!important;padding:3px 7px!important}
+  body.view-line-room .bh{padding:5px 8px}
+  body.view-line-room .bt,body.view-line-room .bc{font-size:10px!important}
+  body.view-line-room .cols{font-size:6.5px!important;padding:3px 4px!important}
+  body.view-line-room .fr{font-size:8px!important;padding:3px 4px!important;min-height:0!important;gap:1px!important}
+  body.view-line-room .fi{font-size:9px!important}
+  body.view-line-room .ft,body.view-line-room .ff,body.view-line-room .fm,body.view-line-room .fe{font-size:8px!important}
+  body.view-line-room .spot-click{font-size:7px!important}
+}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/twemoji.min.js" crossorigin="anonymous"></script>
@@ -567,9 +628,9 @@ body{display:flex;flex-direction:column;min-height:100vh}
 </head>
 <body>
 <div class="topbar">
-<div class="tb-l"><div class="brand"><div class="brand-i">S</div><span class="brand-n">Skyway</span></div><div class="sep"></div><span class="clk" id="ck">--:--:--</span></div>
+<div class="tb-l"><div class="brand"><div class="brand-i">S</div><span class="brand-n">Skyway</span></div><span class="view-badge" id="viewBadge">DISPATCH</span><div class="sep"></div><span class="clk" id="ck">--:--:--</span></div>
 <div class="tb-c"><span class="apt" id="ac">KSFO</span><span class="apn" id="an">San Francisco Intl · GA</span></div>
-<div class="tb-r"><div class="pill live" id="pill"><div class="dot"></div><span id="pt">CONNECTING</span></div><div class="sep"></div><div class="fd on" id="fo"><div class="d"></div>OPENSKY</div><div class="fd on" id="fswim" title="FAA SWIM SCDS — free event feed"><div class="d"></div>SWIM</div><div class="fd off" id="fadbPill" style="display:none" title="AeroDataBox — optional, budget-capped supplemental source"><div class="d"></div>ADB</div><div class="sep"></div><div class="fd on" id="fcr" style="cursor:pointer" onclick="showCreditDetails()" title="Click for OpenSky credit details"><div class="d"></div><span id="fcrVal">—</span></div><div class="sep" id="adbSep" style="display:none"></div><div class="fd on" id="fadb" style="display:none;cursor:pointer" onclick="showAdbDetails()" title="Click for AeroDataBox usage details"><div class="d"></div><span id="fadbVal">—</span></div><div class="sep"></div><div class="fd on" id="fidle" style="display:none" title="No browser tabs connected — background polling is paused to save API budget"><div class="d"></div>PAUSED</div><div class="sep"></div><button class="ib" onclick="doRefresh()">⟳</button><button class="ib" onclick="doCenter()">⊕</button></div>
+<div class="tb-r"><div class="pill live" id="pill"><div class="dot"></div><span id="pt">CONNECTING</span></div><div class="sep"></div><div class="fd on" id="fo"><div class="d"></div>OPENSKY</div><div class="fd on" id="fswim" title="FAA SWIM SCDS — free event feed"><div class="d"></div>SWIM</div><div class="fd off" id="fadbPill" style="display:none" title="AeroDataBox — optional, budget-capped supplemental source"><div class="d"></div>ADB</div><div class="sep"></div><div class="fd on" id="fcr" style="cursor:pointer" onclick="showCreditDetails()" title="Click for OpenSky credit details"><div class="d"></div><span id="fcrVal">—</span></div><div class="sep" id="adbSep" style="display:none"></div><div class="fd on" id="fadb" style="display:none;cursor:pointer" onclick="showAdbDetails()" title="Click for AeroDataBox usage details"><div class="d"></div><span id="fadbVal">—</span></div><div class="sep"></div><div class="fd on" id="fidle" style="display:none" title="No browser tabs connected — background polling is paused to save API budget"><div class="d"></div>PAUSED</div><div class="sep"></div><span class="fuel-price-pill" id="fuelPricePill" style="display:none" title="FBO Jet-A $/gal used for GM cost estimates"></span><button class="ib" onclick="doRefresh()">⟳</button><button class="ib" onclick="doCenter()">⊕</button><div class="view-menu-wrap"><button class="view-menu-btn" id="viewMenuBtn" type="button" title="Board views" aria-haspopup="true" aria-expanded="false" onclick="toggleViewMenu(event)">☰</button><div class="view-menu-dd" id="viewMenuDd" role="menu"><a href="/dispatch" data-view="dispatch">Dispatch</a><a href="/line-room" data-view="line-room">Line room</a><a href="/lobby" data-view="lobby">Lobby</a><a href="/gm" data-view="gm">GM</a></div></div></div>
 </div>
 <div class="map-row" id="mapRow">
 <div class="map-area"><div id="map"></div>
@@ -656,10 +717,17 @@ body{display:flex;flex-direction:column;min-height:100vh}
 </body>
 <script>
 // === SKYWAY DASHBOARD ===
-// v250: view mode gates which edit affordances render/run. Set only here in dispatch.html;
-// line-room.html and arrivals.html override this before this shared script block would ever
-// need to (arrivals ships its own simplified page instead of this file).
-if(typeof VIEW_MODE==='undefined')var VIEW_MODE='dispatch';
+// Four board views share this page. VIEW_MODE comes from the URL path so /dispatch,
+// /line-room, /lobby, and /gm stay separate routes with one codebase.
+var VIEW_MODE=(function(){
+  var p=(location.pathname||'').replace(/\.html$/,'').toLowerCase();
+  if(p.indexOf('/line-room')>=0)return 'line-room';
+  if(p.indexOf('/lobby')>=0)return 'lobby';
+  if(p.indexOf('/gm')>=0)return 'gm';
+  return 'dispatch';
+})();
+document.body.classList.add('view-'+VIEW_MODE);
+document.documentElement.setAttribute('data-view',VIEW_MODE);
 
 
 var MODEL={
@@ -863,6 +931,216 @@ function isVip(ident,callsign){
   if(VIP_TAILS[c])return true;
   return false;
 }
+
+// ============================================================================================
+// GM / LOBBY HELPERS — fuel gallon ESTIMATE + VIP preferCloseSpot heuristic
+// ============================================================================================
+// Fuel gallon ESTIMATE (NOT flight-plan fuel — labelled "est" in the GM UI):
+//   gallons ≈ cruise_gph × (great_circle_nm / cruise_ktas) × 1.15 reserve factor
+// Type-family defaults (reasonable GA/bizjet averages):
+//   heavy  (Global/G650/Falcon 7X–8X, cat>=5 / wingspan>=95): 450 gph @ 470 KTAS
+//   mid-heavy (Challenger/Falcon 900/Citation Longitude, cat 4): 320 gph @ 460 KTAS
+//   mid    (Latitude/Sovereign/Challenger 300/350): 250 gph @ 450 KTAS
+//   light  (CJ/Phenom/Lear/HondaJet): 160 gph @ 420 KTAS
+//   turboprop (PC-12/King Air/TBM/Caravan): 70 gph @ 270 KTAS
+//   piston: 15 gph @ 140 KTAS
+// Cost = gallons × FUEL_PRICE_PER_GAL (env /status.fuelPricePerGal, default $7.85/gal FBO Jet-A).
+//
+// VIP heuristic (no fake owner names — operator/type/distance only):
+//   VIP when (fractional/mixed operator OR heavy bizjet cat>=4 OR known VIP_TAILS)
+//        AND (short stay / QT ≤2h remaining OR long remaining/outbound leg ≥1200 nm
+//             OR explicit VIP_TAILS match).
+//   preferCloseSpot: when VIP, hint Spot A / Spot 1–3 (pri 1–2) if free.
+// ============================================================================================
+var FUEL_PRICE_PER_GAL=7.85;
+var KSFO_LL={lat:37.6213,lon:-122.3790};
+var APT_LL={
+  KSFO:KSFO_LL,SFO:KSFO_LL,KOAK:{lat:37.7213,lon:-122.2208},OAK:{lat:37.7213,lon:-122.2208},
+  KSJC:{lat:37.3626,lon:-121.9290},SJC:{lat:37.3626,lon:-121.9290},
+  KLAX:{lat:33.9425,lon:-118.4081},LAX:{lat:33.9425,lon:-118.4081},KVNY:{lat:34.2098,lon:-118.4897},VNY:{lat:34.2098,lon:-118.4897},
+  KSAN:{lat:32.7336,lon:-117.1897},SAN:{lat:32.7336,lon:-117.1897},KSNA:{lat:33.6757,lon:-117.8682},SNA:{lat:33.6757,lon:-117.8682},
+  KBUR:{lat:34.2006,lon:-118.3585},BUR:{lat:34.2006,lon:-118.3585},KLAS:{lat:36.0840,lon:-115.1537},LAS:{lat:36.0840,lon:-115.1537},
+  KPHX:{lat:33.4373,lon:-112.0078},PHX:{lat:33.4373,lon:-112.0078},KSDL:{lat:33.6229,lon:-111.9105},SDL:{lat:33.6229,lon:-111.9105},
+  KDEN:{lat:39.8561,lon:-104.6737},DEN:{lat:39.8561,lon:-104.6737},KASE:{lat:39.2232,lon:-106.8688},ASE:{lat:39.2232,lon:-106.8688},
+  KTEB:{lat:40.8501,lon:-74.0608},TEB:{lat:40.8501,lon:-74.0608},KJFK:{lat:40.6413,lon:-73.7781},JFK:{lat:40.6413,lon:-73.7781},
+  KEWR:{lat:40.6895,lon:-74.1745},EWR:{lat:40.6895,lon:-74.1745},KHPN:{lat:41.0670,lon:-73.7076},HPN:{lat:41.0670,lon:-73.7076},
+  KBOS:{lat:42.3656,lon:-71.0096},BOS:{lat:42.3656,lon:-71.0096},KIAD:{lat:38.9531,lon:-77.4565},IAD:{lat:38.9531,lon:-77.4565},
+  KDCA:{lat:38.8512,lon:-77.0402},DCA:{lat:38.8512,lon:-77.0402},KORD:{lat:41.9742,lon:-87.9073},ORD:{lat:41.9742,lon:-87.9073},
+  KMDW:{lat:41.7868,lon:-87.7522},MDW:{lat:41.7868,lon:-87.7522},KMIA:{lat:25.7959,lon:-80.2870},MIA:{lat:25.7959,lon:-80.2870},
+  KOPF:{lat:25.9070,lon:-80.2784},OPF:{lat:25.9070,lon:-80.2784},KFLL:{lat:26.0726,lon:-80.1527},FLL:{lat:26.0726,lon:-80.1527},
+  KPBI:{lat:26.6832,lon:-80.0956},PBI:{lat:26.6832,lon:-80.0956},KATL:{lat:33.6407,lon:-84.4277},ATL:{lat:33.6407,lon:-84.4277},
+  KSEA:{lat:47.4502,lon:-122.3088},SEA:{lat:47.4502,lon:-122.3088},KBFI:{lat:47.5300,lon:-122.3019},BFI:{lat:47.5300,lon:-122.3019},
+  KPDX:{lat:45.5898,lon:-122.5951},PDX:{lat:45.5898,lon:-122.5951},KDFW:{lat:32.8998,lon:-97.0403},DFW:{lat:32.8998,lon:-97.0403},
+  KDAL:{lat:32.8471,lon:-96.8518},DAL:{lat:32.8471,lon:-96.8518},KAUS:{lat:30.1945,lon:-97.6699},AUS:{lat:30.1945,lon:-97.6699},
+  KHOU:{lat:29.6454,lon:-95.2789},HOU:{lat:29.6454,lon:-95.2789},KIAH:{lat:29.9902,lon:-95.3368},IAH:{lat:29.9902,lon:-95.3368},
+  KMSP:{lat:44.8848,lon:-93.2223},MSP:{lat:44.8848,lon:-93.2223},KDTW:{lat:42.2124,lon:-83.3534},DTW:{lat:42.2124,lon:-83.3534},
+  KSLC:{lat:40.7899,lon:-111.9791},SLC:{lat:40.7899,lon:-111.9791},KRNO:{lat:39.4991,lon:-119.7681},RNO:{lat:39.4991,lon:-119.7681},
+  KHNL:{lat:21.3187,lon:-157.9225},HNL:{lat:21.3187,lon:-157.9225},KOGG:{lat:20.8986,lon:-156.4305},OGG:{lat:20.8986,lon:-156.4305},
+  PANC:{lat:61.1743,lon:-149.9962},ANC:{lat:61.1743,lon:-149.9962},CYVR:{lat:49.1947,lon:-123.1792},YVR:{lat:49.1947,lon:-123.1792},
+  CYYC:{lat:51.1215,lon:-114.0076},YYC:{lat:51.1215,lon:-114.0076},CYYZ:{lat:43.6777,lon:-79.6248},YYZ:{lat:43.6777,lon:-79.6248},
+  EGLL:{lat:51.4700,lon:-0.4543},LHR:{lat:51.4700,lon:-0.4543},LFPB:{lat:48.9694,lon:2.4414},LBG:{lat:48.9694,lon:2.4414},
+  OMDB:{lat:25.2532,lon:55.3657},DXB:{lat:25.2532,lon:55.3657},RJTT:{lat:35.5494,lon:139.7798},HND:{lat:35.5494,lon:139.7798},
+  VHHH:{lat:22.3080,lon:113.9185},HKG:{lat:22.3080,lon:113.9185},YSSY:{lat:-33.9399,lon:151.1753},SYD:{lat:-33.9399,lon:151.1753},
+  MMUN:{lat:21.0365,lon:-86.8771},CUN:{lat:21.0365,lon:-86.8771},TJSJ:{lat:18.4394,lon:-66.0018},SJU:{lat:18.4394,lon:-66.0018},
+  KAPA:{lat:39.5701,lon:-104.8493},APA:{lat:39.5701,lon:-104.8493},KTRK:{lat:39.3200,lon:-120.1396},TRK:{lat:39.3200,lon:-120.1396},
+  KSBA:{lat:34.4262,lon:-119.8404},SBA:{lat:34.4262,lon:-119.8404},KMRY:{lat:36.5870,lon:-121.8429},MRY:{lat:36.5870,lon:-121.8429},
+  KPSP:{lat:33.8297,lon:-116.5067},PSP:{lat:33.8297,lon:-116.5067},KSTS:{lat:38.5080,lon:-122.8130},STS:{lat:38.5080,lon:-122.8130}
+};
+function aptLatLon(code){
+  if(!code)return null;
+  var c=String(code).toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(APT_LL[c])return APT_LL[c];
+  if(c.length===3&&APT_LL['K'+c])return APT_LL['K'+c];
+  if(c.length===4&&APT_LL[c.slice(1)])return APT_LL[c.slice(1)];
+  return null;
+}
+function gcNm(a,b){
+  if(!a||!b)return null;
+  var R=3440.065;
+  var toR=Math.PI/180;
+  var dLat=(b.lat-a.lat)*toR,dLon=(b.lon-a.lon)*toR;
+  var lat1=a.lat*toR,lat2=b.lat*toR;
+  var h=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)*Math.sin(dLon/2);
+  return R*2*Math.atan2(Math.sqrt(h),Math.sqrt(1-h));
+}
+function fuelBurnProfile(acType){
+  var cat=getWsCat(acType);
+  var t=String(acType||'').toUpperCase();
+  if(/^(GL7T|GL5T|GLEX|GLF6|GLF5|GA7C|GA8C|GA6C|FA7X|FA8X|FA6X|GX6C)$/.test(t)||cat>=5)return {gph:450,ktas:470,family:'heavy'};
+  if(/^(CL60|CL30|CL35|F900|F2TH|C700|E550|E35L)$/.test(t)||cat===4)return {gph:320,ktas:460,family:'mid-heavy'};
+  if(/^(C680|C68A|C56X|C750|E545|E55P|LJ75|LJ60|FA50)$/.test(t)||cat===3)return {gph:250,ktas:450,family:'mid'};
+  if(/^(C25A|C25B|C25C|C525|C510|C500|HDJT|HA4T|LJ35|LJ45|E50P|SF50|PRM1|BE40)$/.test(t)||cat===2)return {gph:160,ktas:420,family:'light'};
+  if(/^(PC12|PC24|B350|BE20|BE9L|TBM7|TBM8|TBM9|C208|P46T|PAY3|MU2)$/.test(t))return {gph:70,ktas:270,family:'turboprop'};
+  if(cat<=1)return {gph:15,ktas:140,family:'piston'};
+  return {gph:200,ktas:400,family:'mid'};
+}
+function legNmForFlight(f,cls){
+  var other=cls==='ar'?(f.from||''):(f.to||'');
+  var ll=aptLatLon(other);
+  if(!ll)return null;
+  return gcNm(KSFO_LL,ll);
+}
+function estimateFuelGallons(f,cls){
+  var nm=legNmForFlight(f,cls);
+  if(nm==null||!(nm>0))return {gallons:null,nm:null,profile:fuelBurnProfile(f.type),hours:null};
+  var p=fuelBurnProfile(f.type);
+  var hours=(nm/p.ktas)*1.15;
+  var gal=Math.round(p.gph*hours);
+  return {gallons:gal,nm:Math.round(nm),profile:p,hours:hours};
+}
+function isFractionalish(operator){
+  if(!operator)return false;
+  var b=OP_BRANDS[operator];
+  if(!b)return false;
+  return b.type==='fractional'||b.type==='mixed';
+}
+function isHeavyBizjet(acType){ return getWsCat(acType)>=4; }
+function shortStayHrs(f){
+  if(!f||!f.ident||!window._depByTail)return null;
+  var tk=(f.ident||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  var nextDep=window._depByTail[tk];
+  if(!nextDep||!f.arriveISO)return null;
+  var arrT=new Date(f.arriveISO).getTime();
+  var depT=new Date(nextDep).getTime();
+  if(!(depT>arrT))return null;
+  return (depT-arrT)/3600000;
+}
+function gmVipInfo(f,cls){
+  var knownVip=isVip(f.ident,f.callsign);
+  var uhnw=knownVip||isFractionalish(f.operator)||isHeavyBizjet(f.type);
+  var stay=shortStayHrs(f);
+  var shortStay=(stay!=null&&stay>0&&stay<=2);
+  var nm=legNmForFlight(f,cls);
+  var longLeg=(nm!=null&&nm>=1200);
+  if(!longLeg&&cls==='ar'&&f.ident&&window._depByDest){
+    var tk=(f.ident||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+    var dest=window._depByDest[tk];
+    if(dest){
+      var outNm=gcNm(KSFO_LL,aptLatLon(dest));
+      if(outNm!=null&&outNm>=1200){longLeg=true;nm=Math.round(outNm);}
+    }
+  }
+  var vip=!!(uhnw&&(shortStay||longLeg||knownVip));
+  var preferCloseSpot=vip;
+  var suggested='';
+  if(preferCloseSpot){
+    var cat=getWsCat(f.type);
+    var prefer=cat<=1?'Spot A':(cat<=2?'Spot 1':(cat<=3?'Spot 3':'Spot 4'));
+    suggested=getNextAvailable(prefer,cat);
+  }
+  return {vip:vip,preferCloseSpot:preferCloseSpot,suggestedSpot:suggested,legNm:nm,shortStay:shortStay,longLeg:longLeg,uhnw:uhnw};
+}
+function fmtMoney(n){
+  if(n==null||isNaN(n))return '—';
+  return '$'+Math.round(n).toLocaleString('en-US');
+}
+function toggleViewMenu(ev){
+  if(ev)ev.stopPropagation();
+  var dd=document.getElementById('viewMenuDd');
+  var btn=document.getElementById('viewMenuBtn');
+  if(!dd||!btn)return;
+  var open=!dd.classList.contains('open');
+  dd.classList.toggle('open',open);
+  btn.classList.toggle('open',open);
+  btn.setAttribute('aria-expanded',open?'true':'false');
+}
+function closeViewMenu(){
+  var dd=document.getElementById('viewMenuDd');
+  var btn=document.getElementById('viewMenuBtn');
+  if(dd)dd.classList.remove('open');
+  if(btn){btn.classList.remove('open');btn.setAttribute('aria-expanded','false');}
+}
+function applyViewChrome(){
+  var labels={dispatch:'DISPATCH','line-room':'LINE ROOM',lobby:'LOBBY',gm:'GM'};
+  var titles={dispatch:'Skyway — Dispatch','line-room':'Skyway — Line Room',lobby:'Skyway — Lobby',gm:'Skyway — GM'};
+  var badge=document.getElementById('viewBadge');
+  if(badge)badge.textContent=labels[VIEW_MODE]||'DISPATCH';
+  document.title=titles[VIEW_MODE]||'Skyway — KSFO GA';
+  var dd=document.getElementById('viewMenuDd');
+  if(dd){
+    var links=dd.querySelectorAll('a');
+    for(var i=0;i<links.length;i++){
+      links[i].classList.toggle('active',links[i].getAttribute('data-view')===VIEW_MODE);
+    }
+  }
+  var ca=document.querySelector('.cols.ca');
+  var cd=document.querySelector('.cols.cd');
+  var cad=document.getElementById('ahcols');
+  var cdd=document.getElementById('dhcols');
+  if(VIEW_MODE==='lobby'){
+    if(ca)ca.innerHTML='<span>Ident</span><span>Type</span><span>ETA</span>';
+    if(cd)cd.innerHTML='<span>Ident</span><span>Type</span><span>ETD</span>';
+    if(cad)cad.innerHTML='<span>Ident</span><span>Type</span><span>Time</span>';
+    if(cdd)cdd.innerHTML='<span>Ident</span><span>Type</span><span>Time</span>';
+  } else if(VIEW_MODE==='gm'){
+    var gmH='<span>Ident</span><span></span><span></span><span>Type</span><span>From / To</span><span>PAX</span><span>Gal <span class="est-tag">est</span></span><span>Cost <span class="est-tag">est</span></span><span>VIP / Spot</span>';
+    if(ca)ca.innerHTML=gmH;
+    if(cd)cd.innerHTML=gmH;
+    if(cad)cad.innerHTML=gmH;
+    if(cdd)cdd.innerHTML=gmH;
+  }
+  var pill=document.getElementById('fuelPricePill');
+  if(pill){
+    if(VIEW_MODE==='gm'){
+      pill.style.display='';
+      pill.textContent='$'+Number(FUEL_PRICE_PER_GAL).toFixed(2)+'/gal';
+      pill.title='FBO Jet-A $/gal for GM cost estimates (FUEL_PRICE_PER_GAL)';
+    } else {
+      pill.style.display='none';
+    }
+  }
+  var at=document.getElementById('arrTitle');
+  var dt=document.getElementById('depTitle');
+  if(VIEW_MODE==='lobby'){
+    if(at)at.textContent='🛬 Arrivals';
+    if(dt)dt.textContent='🛫 Departures';
+  } else if(VIEW_MODE==='gm'){
+    if(at)at.textContent='🛬 GM — arrivals (fuel/cost estimates)';
+    if(dt)dt.textContent='🛫 GM — departures (fuel/cost estimates)';
+  }
+}
+document.addEventListener('click',function(){closeViewMenu();});
+applyViewChrome();
 
 // ============================================================================================
 // CORPORATE FLIGHT DEPARTMENTS — GPU PRE-POSITIONING LIST
@@ -1499,6 +1777,8 @@ window.onload=function(){
     // Close any existing dropdown first
     var old=document.querySelector('.spot-dd');if(old)old.remove();
     if(!el)return;
+    // Lobby + GM are read-only; line-room may edit spot only; dispatch edits all.
+    if(VIEW_MODE==='lobby'||VIEW_MODE==='gm')return;
     e.stopPropagation();
     var planeId=el.dataset.plane;
     var rect=el.getBoundingClientRect();
@@ -2265,6 +2545,58 @@ function mkRow(f,cls,done){
   // Desktop/tablet: ICAO on first line, FAA/layman model on second. Mobile denser: keep two-line via .sub.
   var typeSub=modelName?'<span class="sub">'+htmlEsc(modelName)+'</span>':'';
   if(!typeCode&&modelName){typeCodeSafe=htmlEsc(modelName);typeSub='';}
+
+  // ---- LOBBY: minimal — IDENT (tail), plane type, ETA/ETD only; no edit ----
+  if(VIEW_MODE==='lobby'){
+    var rawEtaL=cls==='ar'?calcMins(f.arriveISO):calcMins(f.departISO);
+    var etaL='—';
+    if(done&&cls==='ar'){
+      var agoL=Math.round((Date.now()-new Date(f.arriveISO||0).getTime())/60000);
+      etaL=agoL>=0?fmtHM(agoL):'—';
+    } else if(done&&cls==='de'){
+      var agoLd=Math.round((Date.now()-new Date(f.departISO||0).getTime())/60000);
+      etaL=agoLd>=0?fmtHM(agoLd):'—';
+    } else if(cls==='ar'&&!done&&(f._landed||(f.arriveISO&&rawEtaL<=0)))etaL='LANDED';
+    else if(cls==='ar'&&!done&&rawEtaL<=5&&rawEtaL>0)etaL='FINAL';
+    else if(rawEtaL>0)etaL=fmtHM(rawEtaL);
+    var feL='fe '+(rawEtaL>0&&rawEtaL<=15?'soon':rawEtaL<=60?'mid':'far');
+    var cidL=(id).replace(/[^a-zA-Z0-9]/g,'');
+    var subL=f.callsign?'<span class="sub">'+callsignSafe+'</span>':'';
+    return '<div class="fr'+(cls==='de'?' dep':'')+(done?(cls==='de'?' dep-simple':' arr-done'):'')+'"><span class="fi zp" data-zp="'+cidL+'">'+idSafe+subL+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+feL+'">'+etaL+'</span></div>';
+  }
+
+  // ---- GM: FROM/TO, PAX, fuel gal est, cost, VIP / preferCloseSpot hint ----
+  if(VIEW_MODE==='gm'){
+    var fuel=estimateFuelGallons(f,cls);
+    var vipI=gmVipInfo(f,cls);
+    var safeGm=id.replace(/[^a-zA-Z0-9]/g,'');
+    var rampGm=(window._rampExtra&&window._rampExtra[safeGm])||{};
+    var paxGm=(rampGm.pax===0||rampGm.pax)?rampGm.pax:'—';
+    var fromTo=cls==='ar'
+      ? (htmlEsc(safeStr(f.from)||'—')+' → KSFO')
+      : ('KSFO → '+htmlEsc(safeStr(f.to)||'—'));
+    var cityGm=f.city||lookupAptCity(cls==='ar'?f.from:f.to)||'';
+    var fromToSub=cityGm?'<span class="sub">'+htmlEsc(cityGm)+'</span>':'';
+    var galHtml=fuel.gallons!=null
+      ? ('<span class="gm-gal" title="Estimate: '+fuel.profile.family+' · ~'+fuel.nm+' nm GC · '+fuel.profile.gph+' gph @ '+fuel.profile.ktas+' KTAS × 1.15">'+fuel.gallons+' <span class="est-tag">est</span></span>')
+      : '<span class="est-tag" title="No airport coordinates for leg">n/a</span>';
+    var costHtml=fuel.gallons!=null
+      ? ('<span class="gm-cost" title="est gal × $'+Number(FUEL_PRICE_PER_GAL).toFixed(2)+'/gal FBO">'+fmtMoney(fuel.gallons*FUEL_PRICE_PER_GAL)+' <span class="est-tag">est</span></span>')
+      : '—';
+    var vipHtml='';
+    if(vipI.vip){
+      vipHtml='<span title="VIP heuristic: UHNW-ish operator/type + short stay or long leg — prefer close spot" style="display:inline-block;background:linear-gradient(135deg,#a855f7,#7c3aed);color:#fff;font-size:8px;font-weight:900;padding:1px 5px;border-radius:3px;letter-spacing:.5px">VIP</span>';
+      if(vipI.preferCloseSpot&&vipI.suggestedSpot){
+        vipHtml+='<div class="vip-hint" title="preferCloseSpot">→ '+htmlEsc(vipI.suggestedSpot)+'</div>';
+      }
+    } else {
+      vipHtml='<span style="color:var(--t3)">—</span>';
+    }
+    var subGm=f.callsign?'<span class="sub">'+callsignSafe+'</span>':'';
+    var rowClsGm=cls==='de'?(done?' dep-simple':' dep'):(done?' arr-done':'');
+    return '<div class="fr'+rowClsGm+'"><span class="fi zp" data-zp="'+safeGm+'">'+idSafe+subGm+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+medBadge+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="ff">'+fromTo+fromToSub+'</span><span class="pax-ro">'+htmlEsc(String(paxGm))+'</span><span>'+galHtml+'</span><span>'+costHtml+'</span><span>'+vipHtml+'</span></div>';
+  }
+
   var departSafe=htmlEsc(f.depart);
   var arriveSafe=htmlEsc(f.arrive);
   var rawEta=cls==='ar'?calcMins(f.arriveISO):calcMins(f.departISO);
@@ -2498,6 +2830,8 @@ function updateBoardTitles(mode){
   var at=document.getElementById('arrTitle');
   var dt=document.getElementById('depTitle');
   if(!at||!dt)return;
+  // Lobby/GM set their own titles via applyViewChrome — don't overwrite.
+  if(VIEW_MODE==='lobby'||VIEW_MODE==='gm')return;
   // Schedule boards: through midnight America/Los_Angeles of the current local day.
   at.textContent='🛬 Scheduled arrivals — through midnight PT';
   dt.textContent='🛫 Scheduled departures — through midnight PT';
@@ -2595,6 +2929,13 @@ function fetchBoards(){
     var dh=document.getElementById('dh');
     var active=[],completed=[];
     var nowDep=Date.now();
+    window._depByDest=window._depByDest||{};
+    if(dep)for(var _di=0;_di<dep.length;_di++){
+      var _df=dep[_di];
+      if(_df&&_df.ident&&_df.to&&!_df.departed){
+        window._depByDest[String(_df.ident).toUpperCase().replace(/[^A-Z0-9]/g,'')]=_df.to;
+      }
+    }
     if(dep)for(var i=0;i<dep.length;i++){
       var f=dep[i];
       if(f.departed){
@@ -2971,6 +3312,13 @@ function renderCreditHUD(){
 }
 function updateCreditStatus(){
   fetch('/status',{cache:'no-cache'}).then(function(r){return r.json();}).then(function(s){
+    if(typeof s.fuelPricePerGal==='number'&&s.fuelPricePerGal>0){
+      FUEL_PRICE_PER_GAL=s.fuelPricePerGal;
+      if(VIEW_MODE==='gm'){
+        var _fp=document.getElementById('fuelPricePill');
+        if(_fp)_fp.textContent='$'+Number(FUEL_PRICE_PER_GAL).toFixed(2)+'/gal';
+      }
+    }
     window._creditStatus=s;
     if(s.boardMode)updateBoardTitles(s.boardMode);
     // Anchor the backoff end to a real timestamp so the local ticker can count down every second.
@@ -3245,7 +3593,7 @@ function connectRampWS(){
         } else if(msg.type==='board'){
           refresh();
         } else if(msg.type==='status'){
-          window._creditStatus=msg.data;if(msg.data.boardMode)updateBoardTitles(msg.data.boardMode);renderCreditHUD();renderSwimHUD(msg.data.swim);renderAdbHUD(msg.data.adb);renderIdleHUD(msg.data.idle);
+          window._creditStatus=msg.data;if(msg.data.boardMode)updateBoardTitles(msg.data.boardMode);if(typeof msg.data.fuelPricePerGal==='number'&&msg.data.fuelPricePerGal>0){FUEL_PRICE_PER_GAL=msg.data.fuelPricePerGal;if(VIEW_MODE==='gm'){var _fpw=document.getElementById('fuelPricePill');if(_fpw)_fpw.textContent='$'+Number(FUEL_PRICE_PER_GAL).toFixed(2)+'/gal';}}renderCreditHUD();renderSwimHUD(msg.data.swim);renderAdbHUD(msg.data.adb);renderIdleHUD(msg.data.idle);
         }
       }catch(e){}
     };

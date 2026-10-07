@@ -18,7 +18,7 @@ const { Pool } = require('pg');
 // boot rather than silently running on a bundled credential. pax/spot/flags/tow-notes — which
 // in v249 either lived only in this browser's localStorage (spot) or didn't exist server-side
 // at all (pax was a dead input; flags/tow-notes weren't editable) — are now real rows in
-// Postgres, shared across /dispatch, /line-room, and /arrivals.
+// Postgres, shared across /dispatch, /line-room, /lobby, /gm, and /arrivals.
 // ============================================================================================
 
 function log(m, l = 'INFO') {
@@ -81,6 +81,8 @@ const ADB_MONTHLY_UNIT_BUDGET = parseInt(process.env.ADB_MONTHLY_UNIT_BUDGET || 
 
 const AIRPORT_ICAO = process.env.AIRPORT_ICAO || 'KSFO';
 const IDLE_PAUSE_MINUTES = parseInt(process.env.IDLE_PAUSE_MINUTES || '10', 10);
+// FBO Jet-A $/gal for GM board cost estimates. Override with current FBO price when known.
+const FUEL_PRICE_PER_GAL = parseFloat(process.env.FUEL_PRICE_PER_GAL || '7.85') || 7.85;
 // Daily hard cap on OpenSky's schedule-style /flights/* endpoints (arrival/departure lookups).
 // Distinct from the credit-cost table below, which is specific to /states/all's bbox pricing —
 // OpenSky doesn't publish a per-call credit cost for /flights/*, so this is a conservative,
@@ -2675,7 +2677,8 @@ function buildStatusPayload() {
     landedHoldMs: LANDED_KEEP_MS,
     idle: { paused: isIdle(), secondsSinceLastClient: Math.round((Date.now() - lastClientSeenAt) / 1000) },
     connectedClients: wsClients.size,
-    airport: AIRPORT_ICAO
+    airport: AIRPORT_ICAO,
+    fuelPricePerGal: FUEL_PRICE_PER_GAL
   });
 }
 
@@ -2686,8 +2689,13 @@ const server = http.createServer(async (req, res) => {
   var pathname = parsed.pathname;
 
   if (pathname === '/' ) { res.writeHead(302, { Location: '/dispatch' }); res.end(); return; }
-  if (pathname === '/dispatch' || pathname === '/dispatch.html') { serveFile(res, path.join(PUBLIC_DIR, 'dispatch.html'), 'text/html; charset=utf-8'); return; }
-  if (pathname === '/line-room' || pathname === '/line-room.html') { serveFile(res, path.join(PUBLIC_DIR, 'line-room.html'), 'text/html; charset=utf-8'); return; }
+  // Four GA board views share dispatch.html; VIEW_MODE is derived from the path client-side.
+  if (pathname === '/dispatch' || pathname === '/dispatch.html' ||
+      pathname === '/line-room' || pathname === '/line-room.html' ||
+      pathname === '/lobby' || pathname === '/lobby.html' ||
+      pathname === '/gm' || pathname === '/gm.html') {
+    serveFile(res, path.join(PUBLIC_DIR, 'dispatch.html'), 'text/html; charset=utf-8'); return;
+  }
   if (pathname === '/arrivals' || pathname === '/arrivals.html') { serveFile(res, path.join(PUBLIC_DIR, 'arrivals.html'), 'text/html; charset=utf-8'); return; }
   if (pathname === '/airloom' || pathname === '/airloom.html') { serveFile(res, path.join(PUBLIC_DIR, 'airloom.html'), 'text/html; charset=utf-8'); return; }
   if (pathname.startsWith('/vendor/')) {
@@ -2767,7 +2775,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  sendJSON(res, 200, { name: 'Skyway v250', views: ['/dispatch', '/line-room', '/arrivals', '/airloom'] });
+  sendJSON(res, 200, { name: 'Skyway v250', views: ['/dispatch', '/line-room', '/lobby', '/gm', '/arrivals', '/airloom'], fuelPricePerGal: FUEL_PRICE_PER_GAL });
 });
 
 function broadcast(d) {
@@ -2818,7 +2826,8 @@ async function main() {
     swimStats.reason = 'SWIM_ENABLED!=1 (OpenSky + adsb.lol only)';
     log('SWIM skipped — set SWIM_ENABLED=1 with SWIM_USER/SWIM_PASS/SWIM_QUEUE when SWIFT is restored', 'WARN');
   }
-  log('Views: /dispatch  /line-room  /arrivals  /airloom', 'OK');
+  log('Views: /dispatch  /line-room  /lobby  /gm  /arrivals  /airloom', 'OK');
+  log('FUEL_PRICE_PER_GAL=$' + FUEL_PRICE_PER_GAL.toFixed(2) + ' (GM cost estimates)', 'INFO');
   log('AeroDataBox: ' + (ADB_ENABLED ? ('ENABLED, budget ' + ADB_MONTHLY_UNIT_BUDGET + ' units/mo') : 'disabled (set ADB_ENABLED=1 to turn on)'), 'INFO');
   log('ADSB primary: ' + ADSB_PRIMARY + ' (set ADSB_PRIMARY=opensky to force OpenSky)', 'INFO');
   if (process.env.DEMO_SEED === '1') {
