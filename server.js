@@ -1248,8 +1248,9 @@ function ingestSwimFlightBlock(block, feedLabel) {
     });
   }
 
-  // Filed dest left KSFO for somewhere other than divert-hold airports — drop stale arrival row.
-  if (existingArr && !existingArr.arrived && !airportMatch(dest, AIRPORT_ICAO) && !divertLbl
+  // Filed dest left KSFO for somewhere other than divert-hold airports — drop stale
+  // pre-arrival row. Never clear landed/on-ground inventory here (wait for actual departure).
+  if (existingArr && !existingArr.arrived && !existingArr.onGround && !airportMatch(dest, AIRPORT_ICAO) && !divertLbl
       && !(type === 'DEPARTURE' && airportMatch(orig, AIRPORT_ICAO))) {
     movements.arrivals.delete(key);
     did = true;
@@ -1262,7 +1263,7 @@ function ingestSwimFlightBlock(block, feedLabel) {
     upsertMovement('arrivals', key, { ident: ident, callsign: cs || '', reg: tail || '', type: acType || '', from: orig || '', to: dest || AIRPORT_ICAO, filedDest: AIRPORT_ICAO, divertTo: '', divertAirport: '', divertAt: 0, arrived: true, arriveISO: eta || nowISO, arrive: fmtTimeLA(eta || nowISO), source: srcTag, timeSource: 'swim', etaNote: '' });
     did = true;
   } else if (type === 'DEPARTURE' && airportMatch(orig, AIRPORT_ICAO)) {
-    if (!isoWithinTodayPT(etd || eta)) return did;
+    if (!isoWithinTodayPT(etd)) return did;
     swimStats.departures++;
     rememberIfKsfo('departures');
     var departurePatch = { ident: ident, callsign: cs || '', reg: tail || '', type: acType || '', from: orig || AIRPORT_ICAO, to: dest || '', departed: true, departISO: etd || nowISO, depart: fmtTimeLA(etd || nowISO), source: srcTag, timeSource: 'swim', etaNote: '' };
@@ -1292,7 +1293,8 @@ function ingestSwimFlightBlock(block, feedLabel) {
       }
     }
     if (airportMatch(orig, AIRPORT_ICAO)) {
-      if (isoWithinTodayPT(etd || eta)) {
+      // Gate on ETD only — destination ETA can be after midnight PT on long-haul legs.
+      if (isoWithinTodayPT(etd)) {
         swimStats.departures++;
         rememberIfKsfo('departures');
         upsertMovement('departures', key, {
