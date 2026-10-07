@@ -83,7 +83,7 @@ def build(master: Path, acftref: Path) -> dict:
         r = csv.reader(f); next(r)
         for row in r:
             if not row or not row[0].strip(): continue
-            ref[row[0].strip()] = (row[1].strip(), row[2].strip())
+            ref[row[0].strip()] = (row[1].strip().replace('"',''), row[2].strip().replace('"',''))
     out = {}
     with master.open(newline="", encoding="latin-1") as f:
         r = csv.reader(f); next(r)

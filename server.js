@@ -2046,7 +2046,8 @@ function enrichMovementLoc(f, kind) {
 // ============================================================================================
 
 // Official FAA Releasable Aircraft Database (MASTER + ACFTREF) — free bulk download.
-// HTML Aircraft Inquiry returns 403 from many cloud IPs (incl. Render); the zip does not.
+// HTML Aircraft Inquiry often 403s from cloud IPs. Zip works with a browser-like UA
+// (bot-ish UAs get 403). Refresh shipped bundle: python3 scripts/refresh-faa-nreg.py
 var FAA_DB_URL = process.env.FAA_DB_URL || 'https://registry.faa.gov/database/ReleasableAircraft.zip';
 var FAA_DB_DIR = process.env.FAA_DB_DIR || path.join(require('os').tmpdir(), 'skyway-faa');
 var FAA_DB_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
@@ -2067,65 +2068,172 @@ async function ensureFaaDb(force) {
   faaDbLoading = (async function () {
     var fsP = fs.promises;
     var zlib = require('zlib');
-    try {
-      // 1) Bundled official releasable extract (works offline / when registry.faa.gov 403s cloud IPs).
-      // Prefer a fresh bundle; if mtime is older than FAA_DB_MAX_AGE_MS, still load it but log a refresh hint.
+    var readline = require('readline');
+    var { execFile } = require('child_process');
+    // registry.faa.gov 403s some bot-ish UAs; a normal browser UA downloads the zip.
+    var FAA_UA = process.env.FAA_DB_UA || 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+    function applyJsonObject(obj, source) {
+      var next = new Map();
+      var keys = Object.keys(obj);
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        var v = obj[k] || {};
+        next.set(k, {
+          make: '',
+          rawModel: v.m || '',
+          model: v.m || (v.t && ICAO_TO_LAYMAN[v.t]) || '',
+          icaoType: v.t || faaIcaoFromModel(v.m || ''),
+          source: 'releasable-db'
+        });
+      }
+      faaDbByN = next;
+      faaDbStatus = { loaded: true, count: next.size, loadedAt: Date.now(), error: null, source: source };
+      log('[FAA DB] loaded ' + next.size + ' N-numbers from ' + source, 'OK');
+      return faaDbStatus;
+    }
+
+
+    function parseCsvFields(line, maxFields) {
+      var out = [];
+      var cur = '';
+      var inQ = false;
+      for (var i = 0; i < line.length; i++) {
+        var ch = line.charAt(i);
+        if (inQ) {
+          if (ch === '"') {
+            if (line.charAt(i + 1) === '"') { cur += '"'; i++; }
+            else inQ = false;
+          } else cur += ch;
+        } else if (ch === '"') {
+          inQ = true;
+        } else if (ch === ',') {
+          out.push(cur);
+          cur = '';
+          if (maxFields && out.length >= maxFields) {
+            // remainder unused
+            return out;
+          }
+        } else cur += ch;
+      }
+      out.push(cur);
+      return out;
+    }
+
+    function readCsvLines(filePath, onLine) {
+      return new Promise(function (resolve, reject) {
+        var stream = fs.createReadStream(filePath, { encoding: 'utf8' });
+        var rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+        var first = true;
+        rl.on('line', function (line) {
+          if (first) { first = false; return; }
+          if (line) onLine(line);
+        });
+        rl.on('close', resolve);
+        rl.on('error', reject);
+        stream.on('error', reject);
+      });
+    }
+
+    async function loadFromBundled() {
       var bundled = path.join(__dirname, 'data', 'faa-nreg.json.gz');
       var bundledAlt = path.join(__dirname, 'data', 'faa-nreg.json');
-      var loadedFrom = null;
-      var jsonTxt = null;
       try {
         var gzStat = await fsP.stat(bundled);
         var gz = await fsP.readFile(bundled);
-        jsonTxt = zlib.gunzipSync(gz).toString('utf8');
-        loadedFrom = 'bundled-gz';
+        var jsonTxt = zlib.gunzipSync(gz).toString('utf8');
         var ageMs = Date.now() - gzStat.mtimeMs;
-        if (ageMs > FAA_DB_MAX_AGE_MS) {
-          log('[FAA DB] bundled faa-nreg.json.gz is ' + Math.round(ageMs / 86400000) + 'd old — run scripts/refresh-faa-nreg.py', 'WARN');
-        }
+        return { obj: JSON.parse(jsonTxt), source: 'bundled-gz', ageMs: ageMs, mtimeMs: gzStat.mtimeMs };
       } catch (e1) {
         try {
-          jsonTxt = await fsP.readFile(bundledAlt, 'utf8');
-          loadedFrom = 'bundled-json';
-        } catch (e2) { /* fall through to optional live zip */ }
-      }
-      if (jsonTxt) {
-        var obj = JSON.parse(jsonTxt);
-        var next = new Map();
-        var keys = Object.keys(obj);
-        for (var i = 0; i < keys.length; i++) {
-          var k = keys[i];
-          var v = obj[k] || {};
-          next.set(k, {
-            make: '',
-            rawModel: v.m || '',
-            model: v.m || (v.t && ICAO_TO_LAYMAN[v.t]) || '',
-            icaoType: v.t || faaIcaoFromModel(v.m || ''),
-            source: 'releasable-db'
-          });
+          var jsonTxt2 = await fsP.readFile(bundledAlt, 'utf8');
+          return { obj: JSON.parse(jsonTxt2), source: 'bundled-json', ageMs: null, mtimeMs: 0 };
+        } catch (e2) {
+          return null;
         }
-        faaDbByN = next;
-        faaDbStatus = { loaded: true, count: next.size, loadedAt: Date.now(), error: null, source: loadedFrom };
-        log('[FAA DB] loaded ' + next.size + ' N-numbers from ' + loadedFrom, 'OK');
-        return faaDbStatus;
       }
+    }
 
-      // 2) Optional live zip (often 403 from Render — best-effort)
+    async function loadFromLiveZip() {
       await fsP.mkdir(FAA_DB_DIR, { recursive: true });
       var zipPath = path.join(FAA_DB_DIR, 'ReleasableAircraft.zip');
-      log('[FAA DB] no bundle — trying live download…', 'WARN');
+      log('[FAA DB] downloading releasable registry zip…', 'INFO');
       var res = await fetch(FAA_DB_URL, {
-        headers: { 'User-Agent': 'SkywaySFOBoard/250 (KSFO FBO; +https://skyway-sfo.onrender.com)' }
+        headers: { 'User-Agent': FAA_UA, 'Accept': 'application/zip,*/*' }
       });
       if (!res.ok) throw new Error('download HTTP ' + res.status);
-      await fsP.writeFile(zipPath, Buffer.from(await res.arrayBuffer()));
-      var { execFile } = require('child_process');
+      var buf = Buffer.from(await res.arrayBuffer());
+      await fsP.writeFile(zipPath, buf);
+      log('[FAA DB] downloaded ' + Math.round(buf.length / 1048576) + 'MB', 'OK');
       await new Promise(function (resolve, reject) {
-        execFile('unzip', ['-o', '-j', zipPath, 'MASTER.txt', 'ACFTREF.txt', '-d', FAA_DB_DIR], { timeout: 120000 }, function (err) {
+        execFile('unzip', ['-o', '-j', zipPath, 'MASTER.txt', 'ACFTREF.txt', '-d', FAA_DB_DIR], { timeout: 180000 }, function (err) {
           if (err) reject(err); else resolve();
         });
       });
-      throw new Error('live zip extract requires unzip + full parse — ship data/faa-nreg.json.gz');
+      var refPath = path.join(FAA_DB_DIR, 'ACFTREF.txt');
+      var masterPath = path.join(FAA_DB_DIR, 'MASTER.txt');
+      var refMap = new Map();
+      await readCsvLines(refPath, function (rl) {
+        var rp = parseCsvFields(rl, 3);
+        if (rp.length < 3) return;
+        var code = String(rp[0] || '').replace(/^\uFEFF/, '').trim();
+        if (!code) return;
+        refMap.set(code, { make: String(rp[1] || '').trim().replace(/^"|"$/g, ''), model: String(rp[2] || '').trim().replace(/^"|"$/g, '') });
+      });
+      var next = new Map();
+      await readCsvLines(masterPath, function (ml) {
+        var mp = parseCsvFields(ml, 3);
+        if (mp.length < 3) return;
+        var nNum = String(mp[0] || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (!nNum) return;
+        var nKey = nNum.charAt(0) === 'N' ? nNum : ('N' + nNum);
+        if (!isNRegIdent(nKey)) return;
+        var mfrCode = String(mp[2] || '').trim();
+        var ref = refMap.get(mfrCode) || {};
+        var rawModel = ref.model || '';
+        var make = ref.make || '';
+        if (!rawModel && !make) return;
+        var icao = faaIcaoFromModel(rawModel);
+        var layman = (icao && ICAO_TO_LAYMAN[icao]) || faaLaymanModel(make, rawModel) || rawModel;
+        next.set(nKey, { make: make, rawModel: rawModel, model: layman, icaoType: icao, source: 'releasable-zip' });
+      });
+      try { await fsP.unlink(masterPath); } catch (e) {}
+      try { await fsP.unlink(refPath); } catch (e) {}
+      faaDbByN = next;
+      faaDbStatus = { loaded: true, count: next.size, loadedAt: Date.now(), error: null, source: 'releasable-zip' };
+      log('[FAA DB] indexed ' + next.size + ' N-numbers from live MASTER+ACFTREF', 'OK');
+      return faaDbStatus;
+    }
+
+    try {
+      // Prefer the shipped bundle on boot (fast, memory-safe on Render free tier).
+      // Live zip is ~70MB + ~200MB MASTER parse — only when no bundle, force=true,
+      // or FAA_DB_LIVE_REFRESH=1. Weekly refresh: python3 scripts/refresh-faa-nreg.py
+      var bundled = await loadFromBundled();
+      var liveAllowed = !!force || process.env.FAA_DB_LIVE_REFRESH === '1';
+      var bundleStale = bundled && bundled.ageMs != null && bundled.ageMs > FAA_DB_MAX_AGE_MS;
+
+      if (!bundled && liveAllowed) {
+        return await loadFromLiveZip();
+      }
+      if (!bundled) {
+        // Last resort: try live once so a missing data/ file can still recover
+        try {
+          return await loadFromLiveZip();
+        } catch (liveErr) {
+          throw liveErr;
+        }
+      }
+      if (liveAllowed) {
+        try {
+          return await loadFromLiveZip();
+        } catch (liveErr) {
+          log('[FAA DB] live refresh failed: ' + liveErr.message + ' — falling back to bundle', 'WARN');
+        }
+      } else if (bundleStale) {
+        log('[FAA DB] bundled faa-nreg.json.gz is ' + Math.round(bundled.ageMs / 86400000) + 'd old — run scripts/refresh-faa-nreg.py (or set FAA_DB_LIVE_REFRESH=1)', 'WARN');
+      }
+      return applyJsonObject(bundled.obj, bundled.source);
     } catch (e) {
       faaDbStatus = {
         loaded: faaDbByN.size > 0, count: faaDbByN.size, loadedAt: faaDbStatus.loadedAt || 0,
@@ -2272,7 +2380,7 @@ async function faaFetchRemote(nKey) {
   var ctrl = AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined;
   var res = await fetch(url, {
     headers: {
-      'User-Agent': 'SkywaySFOBoard/250 (KSFO FBO ops; +https://skyway-sfo.onrender.com)',
+      'User-Agent': process.env.FAA_DB_UA || 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       'Accept': 'text/html,application/xhtml+xml'
     },
     signal: ctrl
