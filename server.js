@@ -184,29 +184,35 @@ async function upsertRampState(id, fields, updatedBy) {
 let oskyToken = null, oskyExp = 0, oskyAuthMode = 'unknown';
 async function getToken() {
   if (oskyToken && Date.now() < oskyExp - 30000) return oskyToken;
-  try {
-    const r = await fetch(TOKEN_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
-      body: 'grant_type=client_credentials&client_id=' + encodeURIComponent(OSKY_ID) + '&client_secret=' + encodeURIComponent(OSKY_SECRET)
-    });
-    if (!r.ok) {
-      var errTxt = '';
-      try { errTxt = (await r.text()).slice(0, 120); } catch (e2) {}
-      throw new Error('HTTP ' + r.status + (errTxt ? (': ' + errTxt) : ''));
+  var lastErr = null;
+  // Transient TLS/EOF failures to auth.opensky-network.org are common from some cloud egresses.
+  for (var attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const r = await fetch(TOKEN_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+        body: 'grant_type=client_credentials&client_id=' + encodeURIComponent(OSKY_ID) + '&client_secret=' + encodeURIComponent(OSKY_SECRET)
+      });
+      if (!r.ok) {
+        var errTxt = '';
+        try { errTxt = (await r.text()).slice(0, 120); } catch (e2) {}
+        throw new Error('HTTP ' + r.status + (errTxt ? (': ' + errTxt) : ''));
+      }
+      const d = await r.json();
+      if (!d.access_token) throw new Error('token response missing access_token');
+      oskyToken = d.access_token; oskyExp = Date.now() + (d.expires_in || 1800) * 1000;
+      log('OpenSky token OK (authenticated tier: 4000 credits/day)', 'OK');
+      oskyAuthMode = 'authenticated';
+      return oskyToken;
+    } catch (e) {
+      lastErr = e;
+      if (attempt < 3) await new Promise(function (r) { setTimeout(r, 400 * attempt); });
     }
-    const d = await r.json();
-    if (!d.access_token) throw new Error('token response missing access_token');
-    oskyToken = d.access_token; oskyExp = Date.now() + (d.expires_in || 1800) * 1000;
-    log('OpenSky token OK (authenticated tier: 4000 credits/day)', 'OK');
-    oskyAuthMode = 'authenticated';
-    return oskyToken;
-  } catch (e) {
-    log('[OSKY AUTH] Token fetch failed: ' + e.message + ' — ANONYMOUS (400/day). Arrivals board uses adsb.lol inbound.', 'ERR');
-    oskyAuthMode = 'anonymous';
-    OSKY_DAILY_BUDGET = 400;
-    return null;
   }
+  log('[OSKY AUTH] Token fetch failed: ' + (lastErr && lastErr.message) + ' — ANONYMOUS (400/day). Arrivals board uses adsb.lol inbound.', 'ERR');
+  oskyAuthMode = 'anonymous';
+  OSKY_DAILY_BUDGET = 400;
+  return null;
 }
 var oskyCache = {};
 var OSKY_CACHE_TTL = 30000;
@@ -677,7 +683,7 @@ function isAdsbBoardSource(src) {
 // Canonical key prefers N-reg when known; alias map links acid/callsign/reg/hex.
 // ------------------------------------------------------------------------------------------
 var identAliases = new Map(); // any norm ident → canonical key
-var tfmsPlanByAircraft = new Map(); // canonical → last KSFO-related TFMS/SWIM plan fields
+var tfmsPlanByAircraft = new Map(); // canonical → { arrivals, departures } TFMS/SWIM plan fields
 
 function normIdent(s) {
   return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -778,16 +784,46 @@ function mergeMovementMaps(fromKey, toKey) {
     m.set(toKey, merged);
     m.delete(fromKey);
   });
-  if (tfmsPlanByAircraft.has(fromKey) && !tfmsPlanByAircraft.has(toKey)) {
-    tfmsPlanByAircraft.set(toKey, tfmsPlanByAircraft.get(fromKey));
+  if (tfmsPlanByAircraft.has(fromKey)) {
+    var fromBag = tfmsPlanByAircraft.get(fromKey);
+    var toBag = tfmsPlanByAircraft.get(toKey);
+    if (!toBag) {
+      tfmsPlanByAircraft.set(toKey, fromBag);
+    } else if ((fromBag.arrivals || fromBag.departures) || (toBag.arrivals || toBag.departures)) {
+      var mergedBag = {
+        arrivals: (toBag.arrivals || (toBag.board === 'arrivals' ? toBag : null) || fromBag.arrivals || (fromBag.board === 'arrivals' ? fromBag : null)),
+        departures: (toBag.departures || (toBag.board === 'departures' ? toBag : null) || fromBag.departures || (fromBag.board === 'departures' ? fromBag : null))
+      };
+      // Prefer non-null sides from either bag
+      if (!mergedBag.arrivals) mergedBag.arrivals = fromBag.arrivals || null;
+      if (!mergedBag.departures) mergedBag.departures = fromBag.departures || null;
+      if (toBag.arrivals) mergedBag.arrivals = toBag.arrivals;
+      if (toBag.departures) mergedBag.departures = toBag.departures;
+      if (fromBag.arrivals && !mergedBag.arrivals) mergedBag.arrivals = fromBag.arrivals;
+      if (fromBag.departures && !mergedBag.departures) mergedBag.departures = fromBag.departures;
+      tfmsPlanByAircraft.set(toKey, mergedBag);
+    }
+    tfmsPlanByAircraft.delete(fromKey);
   }
-  tfmsPlanByAircraft.delete(fromKey);
   identAliases.set(fromKey, toKey);
   return toKey;
 }
 function rememberTfmsPlan(key, fields) {
   if (!key) return;
-  var prev = tfmsPlanByAircraft.get(key) || {};
+  var board = (fields && fields.board) === 'departures' ? 'departures' : 'arrivals';
+  var bag = tfmsPlanByAircraft.get(key);
+  // Migrate legacy flat plan objects into per-board bags.
+  if (bag && (bag.arrivals || bag.departures)) {
+    /* already bag-shaped */
+  } else if (bag) {
+    var legacyBoard = bag.board === 'departures' ? 'departures' : 'arrivals';
+    var migrated = { arrivals: null, departures: null };
+    migrated[legacyBoard] = bag;
+    bag = migrated;
+  } else {
+    bag = { arrivals: null, departures: null };
+  }
+  var prev = bag[board] || {};
   // TFMS emits amend/status messages with only a subset of the filed-plan
   // fields. Never let an empty partial update erase the filed route or times;
   // SWIM remains authoritative until a newer non-empty value arrives.
@@ -796,20 +832,46 @@ function rememberTfmsPlan(key, fields) {
     var value = fields[name];
     if (value !== undefined && value !== null && (value !== '' || !next[name])) next[name] = value;
   });
+  next.board = board;
   next.rememberedAt = Date.now();
-  tfmsPlanByAircraft.set(key, next);
+  bag[board] = next;
+  tfmsPlanByAircraft.set(key, bag);
   // Mirror under every alias that points here
   identAliases.forEach(function (canon, alias) {
     if (canon === key && alias !== key) {
-      var p = tfmsPlanByAircraft.get(alias) || {};
-      tfmsPlanByAircraft.set(alias, Object.assign({}, p, next));
+      var other = tfmsPlanByAircraft.get(alias);
+      if (other && (other.arrivals || other.departures)) {
+        other[board] = Object.assign({}, other[board] || {}, next);
+        tfmsPlanByAircraft.set(alias, other);
+      } else {
+        var mirror = { arrivals: null, departures: null };
+        mirror[board] = next;
+        if (other && other.board) {
+          var lb = other.board === 'departures' ? 'departures' : 'arrivals';
+          mirror[lb] = other;
+        }
+        tfmsPlanByAircraft.set(alias, mirror);
+      }
     }
   });
 }
-function lookupTfmsPlan(key) {
+function lookupTfmsPlan(key, board) {
   if (!key) return null;
   var canon = identAliases.get(key) || key;
-  return tfmsPlanByAircraft.get(canon) || tfmsPlanByAircraft.get(key) || null;
+  var bag = tfmsPlanByAircraft.get(canon) || tfmsPlanByAircraft.get(key);
+  if (!bag) return null;
+  // Legacy flat plan (pre board-scope)
+  if (!(bag.arrivals || bag.departures) && (bag.from || bag.to || bag.arriveISO || bag.departISO || bag.board)) {
+    if (!board) return bag;
+    if (bag.board && bag.board !== board) return null;
+    // Heuristic: arrival plan must target home; departure plan must originate home.
+    if (board === 'arrivals' && bag.to && !airportMatch(bag.to, AIRPORT_ICAO)) return null;
+    if (board === 'departures' && bag.from && !airportMatch(bag.from, AIRPORT_ICAO)) return null;
+    return bag;
+  }
+  if (!board) return bag.arrivals || bag.departures || null;
+  if (bag[board]) return bag[board];
+  return null;
 }
 function pruneTfmsPlansPastMidnight() {
   var eod = endOfDayPTMs(Date.now());
@@ -819,33 +881,50 @@ function pruneTfmsPlansPastMidnight() {
     if (at < eod - 24 * 3600000) landedDroppedAt.delete(key);
   });
   tfmsPlanByAircraft.forEach(function (plan, key) {
-    var t = plan.arriveISO ? Date.parse(plan.arriveISO) : (plan.departISO ? Date.parse(plan.departISO) : 0);
-    // Drop plans whose filed time is past end of their PT day (+ small grace after midnight)
-    if (t && t < eod - 24 * 3600000) { // older than previous day's EOD window
+    function planTime(p) {
+      if (!p) return 0;
+      return p.arriveISO ? Date.parse(p.arriveISO) : (p.departISO ? Date.parse(p.departISO) : 0);
+    }
+    if (plan && (plan.arrivals || plan.departures)) {
+      ['arrivals', 'departures'].forEach(function (b) {
+        var p = plan[b];
+        var t = planTime(p);
+        // Drop side whose filed time is older than previous PT day's EOD, or beyond tonight's midnight
+        if (t && (t < eod - 24 * 3600000 || t >= eod)) {
+          plan[b] = null;
+          dropped++;
+        }
+      });
+      if (!plan.arrivals && !plan.departures) tfmsPlanByAircraft.delete(key);
+      else tfmsPlanByAircraft.set(key, plan);
+      return;
+    }
+    var t = planTime(plan);
+    if (t && (t < eod - 24 * 3600000 || t >= eod)) {
       tfmsPlanByAircraft.delete(key);
       dropped++;
     }
   });
-  // Drop quiet SWIM scheduled board rows whose ETA/ETD is past today's PT midnight (and not landed-kept)
+  // Drop scheduled SWIM rows whose ETA/ETD is beyond tonight's PT midnight (not yet landed/departed)
   var now = Date.now();
+  var eodNow = endOfDayPTMs(now);
   ['arrivals', 'departures'].forEach(function (board) {
     movements[board].forEach(function (f, key) {
-      if (!f || !isSwimishSource(f.source)) return;
-      if (f.arrived || f.departed) return;
-      var iso = board === 'arrivals' ? f.arriveISO : f.departISO;
+      if (!f) return;
+      if (f.arrived || f.departed || f.onGround) return;
+      var iso = board === 'arrivals' ? (f.arriveISO || f.departISO) : f.departISO;
       if (!iso) {
-        // Keep no-time swim rows until rememberedAt day rolls (accuracy: don't drop quiet schedules early)
-        if (f.lastUpdate && (now - f.lastUpdate) < 36 * 3600000) return;
-        return;
-      }
-      var win = withinPTDayWindow(iso, now);
-      if (win === false) {
-        // Past midnight window — allow drop of future-beyond-today already filtered; past times handled by landed prune
-        var ms = Date.parse(iso);
-        if (ms && ms >= endOfDayPTMs(now)) {
+        // Keep no-time swim rows for a while; drop stale quiet rows after 36h
+        if (isSwimishSource(f.source) && f.lastUpdate && (now - f.lastUpdate) >= 36 * 3600000) {
           movements[board].delete(key);
           dropped++;
         }
+        return;
+      }
+      var ms = Date.parse(iso);
+      if (ms && ms >= eodNow) {
+        movements[board].delete(key);
+        dropped++;
       }
     });
   });
@@ -1054,6 +1133,14 @@ function swimBlockLaddBlocked(block) {
   }
   return false;
 }
+
+// True when the filed ISO is still on today's PT board (before tonight's midnight).
+function isoWithinTodayPT(iso) {
+  if (!iso) return true; // unknown time — keep and let prune decide later
+  var win = withinPTDayWindow(iso, Date.now());
+  return win !== false;
+}
+
 function ingestSwimFlightBlock(block, feedLabel) {
   // TFMS R14 fltdMessage attributes (acid/depArpt/arrArpt) + nested nxce/nxcm tags.
   // SFDPS/FDPS FIXM often uses aircraftIdentification / aerodrome locationIndicator instead.
@@ -1070,16 +1157,21 @@ function ingestSwimFlightBlock(block, feedLabel) {
     var inferredTail = inferFracNReg(cs);
     if (inferredTail) tail = inferredTail;
   }
+  var depFixOpen = (block.match(/<nxcm:departureFixAndTime\b[^>]*>/i) || [])[0] || '';
+  var arrFixOpen = (block.match(/<nxcm:arrivalFixAndTime\b[^>]*>/i) || [])[0] || '';
+  var etaAttrBlock = (block.match(/<nxcm:eta\b[^>]*>/i) || [])[0] || '';
   var etd = parseIsoLoose(
     xmlAttr(block, 'igtd') ||
-    xval(block, 'earliestRunwayDepartureTime', 'estimatedOffBlockTime', 'EOBT', 'departureDateTime', 'gateDepartureTime', 'estimatedDepartureTime', 'igtd', 'actualOffBlockTime') ||
-    xmlAttr(block.match(/<nxcm:departureFixAndTime\b[^>]*>/i)?.[0] || '', 'arrTime')
+    xmlAttr(depFixOpen, 'arrTime') ||
+    xmlAttr(block, 'departureTime') ||
+    xval(block, 'earliestRunwayDepartureTime', 'estimatedOffBlockTime', 'EOBT', 'departureDateTime', 'gateDepartureTime', 'estimatedDepartureTime', 'igtd', 'actualOffBlockTime', 'actualTakeOffTime', 'departureTime')
   );
-  var etaAttrBlock = (block.match(/<nxcm:eta\b[^>]*>/i) || [])[0] || '';
   var eta = parseIsoLoose(
     xmlAttr(etaAttrBlock, 'timeValue') ||
-    xval(block, 'earliestRunwayArrivalTime', 'estimatedArrivalTime', 'ETA', 'arrivalDateTime', 'gateArrivalTime', 'estimatedTimeOfArrival', 'actualLandingTime') ||
-    xmlAttr(block.match(/<nxcm:arrivalFixAndTime\b[^>]*>/i)?.[0] || '', 'arrTime')
+    xmlAttr(arrFixOpen, 'arrTime') ||
+    xmlAttr(block, 'eta') ||
+    xmlAttr(block, 'arrivalTime') ||
+    xval(block, 'earliestRunwayArrivalTime', 'estimatedArrivalTime', 'ETA', 'arrivalDateTime', 'gateArrivalTime', 'estimatedTimeOfArrival', 'actualLandingTime', 'arrivalTime', 'estimatedLandingTime')
   );
   var msgType = (xmlAttr(block, 'msgType') || '').toLowerCase();
   var type = 'UNKNOWN';
@@ -1156,49 +1248,62 @@ function ingestSwimFlightBlock(block, feedLabel) {
     });
   }
 
+  // Filed dest left KSFO for somewhere other than divert-hold airports — drop stale arrival row.
+  if (existingArr && !existingArr.arrived && !airportMatch(dest, AIRPORT_ICAO) && !divertLbl
+      && !(type === 'DEPARTURE' && airportMatch(orig, AIRPORT_ICAO))) {
+    movements.arrivals.delete(key);
+    did = true;
+  }
+
   if (type === 'ARRIVAL' && airportMatch(dest, AIRPORT_ICAO)) {
+    if (!isoWithinTodayPT(eta || etd)) return did;
     swimStats.arrivals++;
     rememberIfKsfo('arrivals');
     upsertMovement('arrivals', key, { ident: ident, callsign: cs || '', reg: tail || '', type: acType || '', from: orig || '', to: dest || AIRPORT_ICAO, filedDest: AIRPORT_ICAO, divertTo: '', divertAirport: '', divertAt: 0, arrived: true, arriveISO: eta || nowISO, arrive: fmtTimeLA(eta || nowISO), source: srcTag, timeSource: 'swim', etaNote: '' });
     did = true;
   } else if (type === 'DEPARTURE' && airportMatch(orig, AIRPORT_ICAO)) {
+    if (!isoWithinTodayPT(etd || eta)) return did;
     swimStats.departures++;
     rememberIfKsfo('departures');
-    var departurePatch = { ident: ident, callsign: cs || '', reg: tail || '', type: acType || '', to: dest || '', departed: true, departISO: etd || nowISO, depart: fmtTimeLA(etd || nowISO), source: srcTag, timeSource: 'swim', etaNote: '' };
+    var departurePatch = { ident: ident, callsign: cs || '', reg: tail || '', type: acType || '', from: orig || AIRPORT_ICAO, to: dest || '', departed: true, departISO: etd || nowISO, depart: fmtTimeLA(etd || nowISO), source: srcTag, timeSource: 'swim', etaNote: '' };
     upsertMovement('departures', key, departurePatch);
     removeLandedArrivalOnDeparture(key, departurePatch);
     did = true;
   } else if (type === 'DEPARTURE' && airportMatch(dest, AIRPORT_ICAO)) {
+    if (!isoWithinTodayPT(eta || etd)) return did;
     swimStats.arrivals++;
     rememberIfKsfo('arrivals');
     upsertMovement('arrivals', key, { ident: ident, callsign: cs || '', reg: tail || '', type: acType || '', from: orig || '', to: dest || AIRPORT_ICAO, filedDest: AIRPORT_ICAO, divertTo: '', divertAirport: '', divertAt: 0, arrived: false, departISO: etd || nowISO, depart: fmtTimeLA(etd || nowISO), arriveISO: eta || '', arrive: eta ? fmtTimeLA(eta) : '', source: srcTag, timeSource: 'swim', etaNote: '' });
     did = true;
   } else if (type === 'FLIGHT_PLAN' || type === 'EN_ROUTE' || type === 'UNKNOWN') {
     if (airportMatch(dest, AIRPORT_ICAO)) {
-      swimStats.arrivals++;
-      rememberIfKsfo('arrivals');
-      upsertMovement('arrivals', key, {
-        ident: ident, callsign: cs || '', reg: tail || '', type: acType || '', from: orig || '',
-        to: dest || AIRPORT_ICAO, filedDest: AIRPORT_ICAO,
-        arrived: false,
-        divertTo: '', divertAirport: '', divertAt: 0,
-        arriveISO: eta || '', arrive: eta ? fmtTimeLA(eta) : '',
-        departISO: etd || '', depart: etd ? fmtTimeLA(etd) : '',
-        source: srcTag, timeSource: 'swim', etaNote: ''
-      });
-      did = true;
+      if (isoWithinTodayPT(eta || etd)) {
+        swimStats.arrivals++;
+        rememberIfKsfo('arrivals');
+        upsertMovement('arrivals', key, {
+          ident: ident, callsign: cs || '', reg: tail || '', type: acType || '', from: orig || '',
+          to: dest || AIRPORT_ICAO, filedDest: AIRPORT_ICAO,
+          divertTo: '', divertAirport: '', divertAt: 0,
+          arriveISO: eta || '', arrive: eta ? fmtTimeLA(eta) : '',
+          departISO: etd || '', depart: etd ? fmtTimeLA(etd) : '',
+          source: srcTag, timeSource: 'swim', etaNote: ''
+        });
+        did = true;
+      }
     }
     if (airportMatch(orig, AIRPORT_ICAO)) {
-      swimStats.departures++;
-      rememberIfKsfo('departures');
-      upsertMovement('departures', key, {
-        ident: ident, callsign: cs || '', reg: tail || '', type: acType || '', to: dest || '',
-        departed: false,
-        departISO: etd || '', depart: etd ? fmtTimeLA(etd) : '',
-        arriveISO: eta || '', arrive: eta ? fmtTimeLA(eta) : '',
-        source: srcTag, timeSource: 'swim', etaNote: ''
-      });
-      did = true;
+      if (isoWithinTodayPT(etd || eta)) {
+        swimStats.departures++;
+        rememberIfKsfo('departures');
+        upsertMovement('departures', key, {
+          ident: ident, callsign: cs || '', reg: tail || '', type: acType || '',
+          from: orig || AIRPORT_ICAO, to: dest || '',
+          departISO: etd || '', depart: etd ? fmtTimeLA(etd) : '',
+          arriveISO: eta || '', arrive: eta ? fmtTimeLA(eta) : '',
+          source: srcTag, timeSource: 'swim', etaNote: ''
+        });
+        did = true;
+      }
     }
   }
   return did;
@@ -1227,18 +1332,19 @@ function upsertMovement(board, key, patch) {
 
   var patchIsAdsb = isAdsbBoardSource(patch && patch.source);
   var existingSwim = isSwimishSource(existing.source) || existing.timeSource === 'swim';
-  var plan = lookupTfmsPlan(resolved);
+  // Board-scoped plan only — never apply an outbound plan onto an arrival row (or vice versa).
+  var plan = lookupTfmsPlan(resolved, board);
 
   // Prefer SWIM filed dep/ETA over ADS-B geometric ETA when both exist
   if (patchIsAdsb && (existingSwim || (plan && (plan.arriveISO || plan.departISO)))) {
-    if (existing.arriveISO || (plan && plan.arriveISO)) {
+    if (board === 'arrivals' && (existing.arriveISO || (plan && plan.arriveISO))) {
       merged.arriveISO = existing.arriveISO || plan.arriveISO;
       merged.arrive = existing.arrive || (plan && plan.arrive) || fmtTimeLA(merged.arriveISO);
       merged.etaNote = '';
       delete merged.etaMin;
       merged.timeSource = 'swim';
     }
-    if (existing.departISO || (plan && plan.departISO)) {
+    if (board === 'departures' && (existing.departISO || (plan && plan.departISO))) {
       merged.departISO = existing.departISO || plan.departISO;
       merged.depart = existing.depart || (plan && plan.depart) || fmtTimeLA(merged.departISO);
       merged.timeSource = 'swim';
@@ -1251,7 +1357,7 @@ function upsertMovement(board, key, patch) {
     merged.fromNote = merged.from ? '' : (merged.fromNote || '');
   }
 
-  // Backfill FROM/TO on ADS-B (or thin) rows from last TFMS plan for same aircraft
+  // Backfill FROM/TO on ADS-B (or thin) rows from same-board TFMS plan only
   if (plan) {
     if (!merged.from && plan.from) { merged.from = plan.from; merged.fromNote = ''; }
     if (!merged.to && plan.to) { merged.to = plan.to; merged.toNote = ''; }
@@ -1264,13 +1370,37 @@ function upsertMovement(board, key, patch) {
         merged.timeSource = 'swim';
         if (!isSwimishSource(merged.source)) merged.source = 'swim+adsb';
       }
-      if (plan.departISO && (board === 'departures' || !merged.departISO)) {
+      if (plan.departISO && board === 'departures') {
         merged.departISO = plan.departISO;
         merged.depart = plan.depart || fmtTimeLA(plan.departISO);
         merged.timeSource = 'swim';
+        if (!isSwimishSource(merged.source)) merged.source = 'swim+adsb';
       }
       if (plan.callsign && !merged.callsign) merged.callsign = plan.callsign;
       if (plan.type && !merged.type) merged.type = plan.type;
+    }
+  }
+
+  // Enforce home-airport route orientation so opposite-leg plans cannot stick.
+  if (board === 'arrivals' && !merged.divertTo) {
+    // Arrivals must be filed to KSFO. If FROM is home and TO is not, this is an outbound bleed.
+    if (airportMatch(merged.from, AIRPORT_ICAO) && merged.to && !airportMatch(merged.to, AIRPORT_ICAO)) {
+      if (existing.from && !airportMatch(existing.from, AIRPORT_ICAO)) merged.from = existing.from;
+      else if (plan && plan.from && !airportMatch(plan.from, AIRPORT_ICAO)) merged.from = plan.from;
+      merged.to = AIRPORT_ICAO;
+    } else if (!merged.to) {
+      merged.to = AIRPORT_ICAO;
+    }
+  }
+  if (board === 'departures') {
+    // Departures must originate at KSFO. If TO is home and FROM is elsewhere, this is an inbound bleed.
+    if (merged.to && airportMatch(merged.to, AIRPORT_ICAO) && merged.from && !airportMatch(merged.from, AIRPORT_ICAO)) {
+      if (existing.to && !airportMatch(existing.to, AIRPORT_ICAO)) merged.to = existing.to;
+      else if (plan && plan.to && !airportMatch(plan.to, AIRPORT_ICAO)) merged.to = plan.to;
+      else merged.to = '';
+      merged.from = AIRPORT_ICAO;
+    } else if (!merged.from) {
+      merged.from = AIRPORT_ICAO;
     }
   }
 
@@ -1289,18 +1419,33 @@ function upsertMovement(board, key, patch) {
     if (!merged.depart) merged.depart = existing.depart;
   }
 
-  // Once landed, do not un-land via FLIGHT_PLAN/EN_ROUTE keep-alive (midnight retention is for pre-departure only).
-  // Also freeze the land clock so repeated SWIM ARRIVAL msgs with nowISO cannot extend the 5m hold.
-  if (existing.arrived && board === 'arrivals') {
-    merged.arrived = true;
+  // Once landed / on-ground, do not un-land via FLIGHT_PLAN/EN_ROUTE or ADS-B inbound keep-alive.
+  // Freeze the land clock so repeated SWIM ARRIVAL msgs with nowISO cannot churn timestamps.
+  if (board === 'arrivals' && (existing.arrived || existing.onGround)) {
+    if (existing.arrived) merged.arrived = true;
+    if (existing.onGround) merged.onGround = true;
     merged.landedAt = existing.landedAt || landClockMs(existing, Date.now());
     if (existing.arriveISO) {
       merged.arriveISO = existing.arriveISO;
       merged.arrive = existing.arrive || merged.arrive;
     }
+    // Do not let ADS-B geometric ETA revive a landed row as "inbound"
+    if (patchIsAdsb) {
+      merged.etaNote = '';
+      delete merged.etaMin;
+      if (existing.timeSource) merged.timeSource = existing.timeSource;
+    }
   }
   if (merged.arrived && board === 'arrivals' && !merged.landedAt) {
-    merged.landedAt = Date.now(); // 5m hold starts at arrival detection
+    merged.landedAt = Date.now();
+  }
+  // Once departed, do not un-depart via FLIGHT_PLAN keep-alive (was resetting departed:false).
+  if (existing.departed && board === 'departures') {
+    merged.departed = true;
+    if (existing.departISO) {
+      merged.departISO = existing.departISO;
+      merged.depart = existing.depart || merged.depart;
+    }
   }
 
   // Suppress re-adding a pruned landed arrival unless a new future ETA is filed.
@@ -1533,7 +1678,7 @@ async function pollOpenSkyFlights() {
       var departISO = f.firstSeen ? new Date(f.firstSeen * 1000).toISOString() : '';
       upsertMovement('departures', key, {
         ident: regGuess || (cs || f.icao24 || '').trim(), callsign: cs, reg: regGuess || '',
-        to: (f.estArrivalAirport || '').trim(), departISO: departISO, depart: fmtTimeLA(departISO),
+        from: AIRPORT_ICAO, to: (f.estArrivalAirport || '').trim(), departISO: departISO, depart: fmtTimeLA(departISO),
         departed: !!f.firstSeen, source: 'opensky-flights'
       });
     });
@@ -1633,7 +1778,13 @@ async function pollAdsbInboundBoard() {
         // Merge orphan callsign-only / reg-only rows into canonical
         if (key !== boardKey && movements.arrivals.has(key)) mergeMovementMaps(key, boardKey);
         var existingA = movements.arrivals.get(boardKey);
-        var planA = lookupTfmsPlan(boardKey);
+        // Already on the ramp — keep row for retention, but do not treat as a fresh inbound.
+        if (existingA && (existingA.arrived || existingA.onGround)) {
+          keepArr[boardKey] = true;
+          keepArr[key] = true;
+          continue;
+        }
+        var planA = lookupTfmsPlan(boardKey, 'arrivals');
         var hasSwimTime = (existingA && (isSwimishSource(existingA.source) || existingA.timeSource === 'swim') && existingA.arriveISO)
           || (planA && planA.arriveISO);
         var patchA = {
@@ -1678,7 +1829,7 @@ async function pollAdsbInboundBoard() {
         if (!boardKeyD) boardKeyD = key;
         if (key !== boardKeyD && movements.departures.has(key)) mergeMovementMaps(key, boardKeyD);
         var existingD = movements.departures.get(boardKeyD);
-        var planD = lookupTfmsPlan(boardKeyD);
+        var planD = lookupTfmsPlan(boardKeyD, 'departures');
         var patchD = {
           ident: (reg || (existingD && existingD.ident) || ident),
           callsign: flight || (existingD && existingD.callsign) || ident,
@@ -1708,6 +1859,7 @@ async function pollAdsbInboundBoard() {
             patchD.toNote = 'ADS-B live';
           }
         }
+        if (!(existingD && existingD.from) && !(planD && planD.from)) patchD.from = AIRPORT_ICAO;
         upsertMovement('departures', boardKeyD, patchD);
         if (patchD.departed) removeLandedArrivalOnDeparture(boardKeyD, patchD);
         keepDep[boardKeyD] = true;
@@ -2343,6 +2495,18 @@ async function buildBoard(kind) {
     var boardReg = f.reg || f.ident || '';
     if (isLaddBlocked(boardReg, boardCs)) continue;
     if (!isGaBizTraffic(boardCs, boardReg, f.type || '')) continue;
+    // Drop opposite-leg bleed (arrival showing KSFO→elsewhere, departure showing elsewhere→KSFO).
+    if (kind === 'arrivals' && !f.divertTo && airportMatch(f.from, AIRPORT_ICAO) && f.to && !airportMatch(f.to, AIRPORT_ICAO)) continue;
+    if (kind === 'departures' && f.to && airportMatch(f.to, AIRPORT_ICAO) && f.from && !airportMatch(f.from, AIRPORT_ICAO)) continue;
+    // Scheduled (not yet landed/departed) rows past tonight's PT midnight stay off today's board.
+    if (kind === 'arrivals' && !f.arrived && !f.onGround) {
+      var aIso = f.arriveISO || f.departISO || '';
+      if (aIso && withinPTDayWindow(aIso) === false) continue;
+    }
+    if (kind === 'departures' && !f.departed) {
+      var dIso = f.departISO || '';
+      if (dIso && withinPTDayWindow(dIso) === false) continue;
+    }
     if (ADB_ENABLED && !isIdle()) f = await adbEnrichIfGap(f);
     // Sync layman model from ICAO instantly; FAA network lookups are budgeted/backgrounded below
     f = faaApplyLocalEnrichment(f);
