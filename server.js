@@ -2068,15 +2068,21 @@ async function ensureFaaDb(force) {
     var fsP = fs.promises;
     var zlib = require('zlib');
     try {
-      // 1) Bundled official releasable extract (works offline / when registry.faa.gov 403s cloud IPs)
+      // 1) Bundled official releasable extract (works offline / when registry.faa.gov 403s cloud IPs).
+      // Prefer a fresh bundle; if mtime is older than FAA_DB_MAX_AGE_MS, still load it but log a refresh hint.
       var bundled = path.join(__dirname, 'data', 'faa-nreg.json.gz');
       var bundledAlt = path.join(__dirname, 'data', 'faa-nreg.json');
       var loadedFrom = null;
       var jsonTxt = null;
       try {
+        var gzStat = await fsP.stat(bundled);
         var gz = await fsP.readFile(bundled);
         jsonTxt = zlib.gunzipSync(gz).toString('utf8');
         loadedFrom = 'bundled-gz';
+        var ageMs = Date.now() - gzStat.mtimeMs;
+        if (ageMs > FAA_DB_MAX_AGE_MS) {
+          log('[FAA DB] bundled faa-nreg.json.gz is ' + Math.round(ageMs / 86400000) + 'd old — run scripts/refresh-faa-nreg.py', 'WARN');
+        }
       } catch (e1) {
         try {
           jsonTxt = await fsP.readFile(bundledAlt, 'utf8');
@@ -2160,7 +2166,7 @@ var FAA_MODEL_TO_ICAO = {
   'GV-SP': 'GLF5', 'G550': 'GLF5', 'GIV-X': 'GLF4', 'G450': 'GLF4',
   'GVI': 'GLF6', 'G650': 'GLF6', 'G650ER': 'GLF6', 'G280': 'G280', 'G200': 'G200', 'G150': 'G150',
   'G500': 'GA5C', 'G600': 'GA6C', 'G700': 'GA7C', 'G800': 'GA8C', 'G400': 'GA4C',
-  'BD-100-1A10': 'CL30', 'BD-700-1A10': 'GLEX', 'BD-700-2A12': 'GLEX', 'PC-12/47E': 'PC12', 'PC1247E': 'PC12', 'MYSTERE-FALCON 50': 'FA50', 'MYSTEREFALCON50': 'FA50', 'CL-600-2B16': 'CL60', 'CL-600-2B19': 'CRJ2',
+  'BD-100-1A10': 'CL30', 'BD-700-1A10': 'GLEX', 'BD-700-2A12': 'GL7T', 'PC-12/47E': 'PC12', 'PC1247E': 'PC12', 'MYSTERE-FALCON 50': 'FA50', 'MYSTEREFALCON50': 'FA50', 'CL-600-2B16': 'CL60', 'CL-600-2B19': 'CRJ2',
   'F2TH': 'F2TH', 'FA7X': 'FA7X', 'FA8X': 'FA8X', 'FA50': 'FA50', 'F900': 'F900',
   'PC-12': 'PC12', 'PC-24': 'PC24', 'TBM 700': 'TBM7', 'TBM 850': 'TBM8', 'TBM 900': 'TBM9',
   '172S': 'C172', '172R': 'C172', '182T': 'C182', '206H': 'C206', '208B': 'C208',
