@@ -4057,7 +4057,7 @@ function showRampView(){
     // 4th Line outline
     L.polyline([[37.626942,-122.381854],[37.628783,-122.380812]],{color:'#ef4444',weight:1.5,opacity:0.4,dashArray:'6,4'}).addTo(rampMap);
     // FBO marker
-    L.marker([37.62815,-122.38476],{interactive:false,icon:L.divIcon({className:'',html:'<div style="font-family:monospace;font-size:9px;font-weight:800;color:#fff;background:rgba(30,58,95,.85);padding:2px 6px;border-radius:4px;white-space:nowrap;border:1px solid rgba(255,255,255,.3)">SIGNATURE FBO</div>',iconSize:[90,16],iconAnchor:[45,8]})}).addTo(rampMap);
+    L.marker([37.62815,-122.38476],{interactive:false,icon:L.divIcon({className:'',html:'<div style="font-family:monospace;font-size:9px;font-weight:800;color:#fff;background:rgba(30,58,95,.85);padding:2px 6px;border-radius:4px;white-space:nowrap;border:1px solid rgba(255,255,255,.3)">KSFO GA</div>',iconSize:[90,16],iconAnchor:[45,8]})}).addTo(rampMap);
     // Legend
     L.control.custom=L.Control.extend({onAdd:function(){var d=L.DomUtil.create('div');d.innerHTML='<div style="background:rgba(0,0,0,.7);padding:6px 8px;border-radius:6px;font-family:monospace;font-size:7px;color:#fff;line-height:1.6"><span style="color:#3b82f6">■</span> 1st Line <span style="color:#22c55e">■</span> 2nd <span style="color:#06b6d4">■</span> 3rd <span style="color:#ef4444">■</span> 4th <span style="color:#f97316">■</span> Overflow <span style="color:#64748b">■</span> Tow-only</div>';return d;}});
     new L.control.custom({position:'bottomleft'}).addTo(rampMap);
