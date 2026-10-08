@@ -47,6 +47,30 @@ function batch(list) {
   ['JTL868', 'N883TR', 'N183QS', 'VJT793', 'N938QS'].forEach(id => assert(has(id), 'missing ' + id));
   assert(!has('UAL123'), 'airline leaked'); assert(!has('N3400C'), 'tomorrow leaked'); assert(!has('N8312H'), 'OAK leaked');
   assert(S.tfmsElsewhereFor(['N8312H']), 'OAK memory');
+  // 2b) Next leg out of SFO for N183QS must NOT delete the inbound RJGG row
+  S.handleSwimMsg(batch([
+    { acid: 'EJA183', dep: 'KSFO', arr: 'KTEB', msgType: 'flightPlanInformation', etd: iso(23 * 60), eta: iso(28 * 60), type: 'GL7T' },
+    { acid: 'EJA467', dep: 'SMO', arr: 'SFO', msgType: 'FlightModify', etd: iso(60), eta: iso(114), type: 'E55P' },
+  ]), 'tfms');
+  let a2 = await S.buildBoard('arrivals');
+  const n183 = a2.find(f => /N183QS/.test(f.ident));
+  assert(n183 && n183.from === 'RJGG', 'N183QS inbound row lost on next-leg msg');
+  const n467 = a2.find(f => /N467QS/.test(f.ident));
+  assert(n467 && n467.from === 'KSMO', 'SMO not normalized: ' + (n467 && n467.from));
+  assert.strictEqual(S.toIcaoAirport('HNL'), 'PHNL');
+  // 2c) Lost row is rehydrated from its TFMS plan
+  const k183 = S.identAliases.get('N183QS') || 'N183QS';
+  S.movements.arrivals.delete(k183);
+  assert(S.rehydrateFromPlans() >= 1, 'no rehydrate');
+  a2 = await S.buildBoard('arrivals');
+  assert(a2.some(f => /N183QS/.test(f.ident)), 'N183QS not rehydrated');
+  // 2d) Same-leg dest change (amend to KLAS) removes row and plan; no rehydrate
+  S.handleSwimMsg(batch([{ acid: 'EJA938', dep: 'KSLC', arr: 'KLAS', msgType: 'flightPlanInformation', etd: iso(18), eta: iso(80), type: 'C68A' }]), 'tfms');
+  S.rehydrateFromPlans();
+  a2 = await S.buildBoard('arrivals');
+  assert(!a2.some(f => /N938QS/.test(f.ident)), 'amended-away row came back');
+  S.handleSwimMsg(batch([{ acid: 'EJA938', dep: 'KSLC', arr: 'KSFO', msgType: 'flightPlanInformation', etd: iso(18), eta: iso(105), type: 'C68A' }]), 'tfms');
+  console.log('next-leg / SMO / rehydrate / amend OK');
   // 3) ADS-B evidence geometry
   const SFO = [37.6213, -122.3790];
   function pt(brgFromField, distNm) { // position at bearing/dist from SFO
@@ -70,6 +94,7 @@ function batch(list) {
   S.pruneStaleAdsbOnly();
   assert(!S.movements.arrivals.has('N999ZZ'), 'stale adsb row kept');
   // 5) Snapshot round trip
+  const arrPre = await S.buildBoard('arrivals');
   await S.saveSnapshot('test');
   const before = S.movements.arrivals.size, plans = S.tfmsPlanByAircraft.size;
   S.movements.arrivals.clear(); S.movements.departures.clear(); S.tfmsPlanByAircraft.clear();
@@ -77,7 +102,7 @@ function batch(list) {
   console.log('restored', S.movements.arrivals.size, 'of', before, 'plans', S.tfmsPlanByAircraft.size, 'of', plans);
   assert.strictEqual(S.movements.arrivals.size, before); assert.strictEqual(S.tfmsPlanByAircraft.size, plans);
   const arr2 = await S.buildBoard('arrivals');
-  assert.strictEqual(arr2.length, arr.length);
+  assert.strictEqual(arr2.length, arrPre.length);
   console.log('ALL OK');
   process.exit(0);
 })().catch(e => { console.error('TEST FAIL', e); process.exit(1); });

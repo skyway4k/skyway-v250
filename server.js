@@ -1256,8 +1256,9 @@ var swimDiag = {
 function swimDiagNote(entry) {
   swimDiag.homeBlocks++;
   swimDiag.homeByDecision[entry.decision] = (swimDiag.homeByDecision[entry.decision] || 0) + 1;
+  if (/^not-ga/.test(entry.decision)) return; // airliners: counted, not kept
   swimDiag.recent.push(entry);
-  if (swimDiag.recent.length > 150) swimDiag.recent.splice(0, swimDiag.recent.length - 150);
+  if (swimDiag.recent.length > 300) swimDiag.recent.splice(0, swimDiag.recent.length - 300);
 }
 // acid/tail → ICAO type learned from any TFMS message that carried one (flightPlanInformation,
 // departureInformation, flightModify…). trackInformation (1/min) carries no type at all.
@@ -1333,12 +1334,41 @@ function isoWithinTodayPT(iso) {
   return win !== false;
 }
 
+// TFMS "Flight*" messages use 3-letter FAA identifiers for US airports (SMO, SFO). Normalize to
+// ICAO so the board shows KSMO (and a US flag) instead of a bare code the client misreads.
+var FAA_LID_TO_ICAO = { HNL: 'PHNL', OGG: 'PHOG', KOA: 'PHKO', LIH: 'PHLI', ITO: 'PHTO', MKK: 'PHMK', ANC: 'PANC', FAI: 'PAFA', JNU: 'PAJN', KTN: 'PAKT', SIT: 'PASI', BET: 'PABE', ADQ: 'PADQ', SJU: 'TJSJ', STT: 'TIST', STX: 'TISX', GUM: 'PGUM' };
+function toIcaoAirport(code) {
+  if (!code) return code;
+  var c = String(code).trim().toUpperCase();
+  if (/^[A-Z]{3}$/.test(c)) return FAA_LID_TO_ICAO[c] || ('K' + c);
+  return c;
+}
+function clearTfmsPlanSide(key, board) {
+  var canon = identAliases.get(key) || key;
+  [key, canon].forEach(function (k) {
+    var bag = tfmsPlanByAircraft.get(k);
+    if (bag && (bag.arrivals || bag.departures)) {
+      bag[board] = null;
+      if (!bag.arrivals && !bag.departures) tfmsPlanByAircraft.delete(k);
+    }
+  });
+  identAliases.forEach(function (c, alias) {
+    if (c !== canon) return;
+    var b = tfmsPlanByAircraft.get(alias);
+    if (b && (b.arrivals || b.departures)) { b[board] = null; if (!b.arrivals && !b.departures) tfmsPlanByAircraft.delete(alias); }
+  });
+  persistDirty = true;
+}
+var swimRawNoEta = [];
+var extRegByCallsign = new Map(); // normalized callsign -> registration as broadcast by ADS-B (e.g. 9H-VIO) // last few raw KSFO GA blocks that carried no ETA (to fix parsing)
 function ingestSwimFlightBlock(block, feedLabel) {
   // TFMS R14 fltdMessage attributes (acid/depArpt/arrArpt) + nested nxce/nxcm tags.
   // SFDPS/FDPS FIXM often uses aircraftIdentification / aerodrome locationIndicator instead.
   var cs = xmlAttr(block, 'acid') || xval(block, 'aircraftId', 'aircraftIdentification', 'callSign', 'callsign', 'flightIdentification');
   var orig = xmlAttr(block, 'depArpt') || xval(block, 'departurePoint[\\s\\S]*?airport', 'departureAirport', 'departureAerodrome.*?locationIndicator', 'originAirport', 'departureAerodrome', 'dep');
   var dest = xmlAttr(block, 'arrArpt') || xval(block, 'arrivalPoint[\\s\\S]*?airport', 'arrivalAirport', 'destinationAerodrome.*?locationIndicator', 'destinationAirport', 'destinationAerodrome', 'arr');
+  orig = toIcaoAirport(orig);
+  dest = toIcaoAirport(dest);
   var acType = normalizeIcaoType(
     // TFMS R14: flightAircraftSpecs (FLIGHT_PLAN_INFORMATION/FLIGHT_CREATE/…),
     // newFlightAircraftSpecs (amendments), flightStatusAndSpec.aircraftspecification.
@@ -1356,11 +1386,22 @@ function ingestSwimFlightBlock(block, feedLabel) {
     var inferredTail = inferFracNReg(cs);
     if (inferredTail) tail = inferredTail;
   }
+  // Non-N registrations (9H-VIO on VJT793) learned from ADS-B for this callsign, or kept on the row.
+  if (!tail && cs) {
+    var csK0 = normIdent(cs);
+    var extReg = extRegByCallsign.get(csK0);
+    if (!extReg) {
+      var rk0 = identAliases.get(csK0) || csK0;
+      var row0 = movements.arrivals.get(rk0) || movements.departures.get(rk0);
+      if (row0 && row0.reg && normIdent(row0.reg) !== csK0) extReg = row0.reg;
+    }
+    if (extReg) tail = extReg;
+  }
   if (acType) rememberTfmsType([cs, tail], acType);
   else acType = cachedTfmsType([cs, tail]);
-  var depFixOpen = (block.match(/<nxcm:departureFixAndTime\b[^>]*>/i) || [])[0] || '';
-  var arrFixOpen = (block.match(/<nxcm:arrivalFixAndTime\b[^>]*>/i) || [])[0] || '';
-  var etaAttrBlock = (block.match(/<nxcm:eta\b[^>]*>/i) || [])[0] || '';
+  var depFixOpen = (block.match(/<(?:\w+:)?departureFixAndTime\b[^>]*>/i) || [])[0] || '';
+  var arrFixOpen = (block.match(/<(?:\w+:)?arrivalFixAndTime\b[^>]*>/i) || [])[0] || '';
+  var etaAttrBlock = (block.match(/<(?:\w+:)?eta\b[^>]*timeValue[^>]*>/i) || [])[0] || '';
   var etd = parseIsoLoose(
     xmlAttr(block, 'igtd') ||
     xmlAttr(depFixOpen, 'arrTime') ||
@@ -1385,11 +1426,12 @@ function ingestSwimFlightBlock(block, feedLabel) {
   }
   var homeTouch = airportMatch(orig, AIRPORT_ICAO) || airportMatch(dest, AIRPORT_ICAO);
   function diag(decision) {
-    if (!homeTouch) return;
+    if (!homeTouch && !/^(dest-changed|divert|other-leg)/.test(decision)) return;
     swimDiagNote({ at: new Date().toISOString(), msgType: msgTypeRaw, acid: cs || '', tail: tail || '', type: acType || '', orig: orig || '', dest: dest || '', eta: eta || '', etd: etd || '', src: srcTs || '', decision: decision });
   }
   var type = 'UNKNOWN';
-  if (block.indexOf('DepartureInformation') >= 0 || block.indexOf('flightDeparture') >= 0 ||
+  if (msgType.indexOf('cancel') >= 0) type = 'CANCEL';
+  else if (block.indexOf('DepartureInformation') >= 0 || block.indexOf('flightDeparture') >= 0 ||
       block.indexOf('actualDeparture') >= 0 || msgType.indexOf('depart') >= 0) type = 'DEPARTURE';
   else if (block.indexOf('ArrivalInformation') >= 0 || block.indexOf('flightArrival') >= 0 ||
       block.indexOf('actualArrival') >= 0 || msgType.indexOf('arriv') >= 0) type = 'ARRIVAL';
@@ -1413,7 +1455,7 @@ function ingestSwimFlightBlock(block, feedLabel) {
     var csU = String(cs || '').toUpperCase();
     if (homeTouch && !acType && /^[A-Z]{3}\d/.test(csU) && !AIRLINE_CS.has(csU.substring(0, 3))) {
       // Unknown operator, no type yet (trackInformation never carries one). Hold, don't show.
-      tfmsPendingUntyped.set(normIdent(cs), { block: block, feedLabel: feedLabel, at: Date.now() });
+      tfmsPendingUntyped.set(normIdent(cs), { block: block, feedLabel: feedLabel, at: Date.now(), cs: cs, toHome: airportMatch(dest, AIRPORT_ICAO) });
       if (tfmsPendingUntyped.size > 400) tfmsPendingUntyped.delete(tfmsPendingUntyped.keys().next().value);
       diag('held-untyped');
     } else {
@@ -1439,10 +1481,25 @@ function ingestSwimFlightBlock(block, feedLabel) {
   var divertLbl = divertLabel(dest);
   var existingArr = movements.arrivals.get(key);
   var touchesHome = airportMatch(orig, AIRPORT_ICAO) || airportMatch(dest, AIRPORT_ICAO);
+  // A message about the same aircraft's NEXT leg out of KSFO (orig=KSFO) or a different leg
+  // (orig differs from the row's FROM) is not an amendment of the inbound flight. Treating it
+  // as one deleted inbound rows (N183QS RJGG→SFO vanished when its SFO→X leg was filed).
+  var sameInboundLeg = !!existingArr && !airportMatch(orig, AIRPORT_ICAO) &&
+    (!orig || !existingArr.from || airportMatch(orig, existingArr.from));
+  if (existingArr && dest && !airportMatch(dest, AIRPORT_ICAO) && !sameInboundLeg) diag('other-leg-ignored:' + (orig || '?') + '-' + dest);
+
+  if (type === 'CANCEL') {
+    var cancelled = false;
+    if (existingArr && !existingArr.arrived && !existingArr.onGround && airportMatch(dest, AIRPORT_ICAO)) { movements.arrivals.delete(key); clearTfmsPlanSide(key, 'arrivals'); cancelled = true; }
+    var existingDep = movements.departures.get(key);
+    if (existingDep && !existingDep.departed && airportMatch(orig, AIRPORT_ICAO)) { movements.departures.delete(key); clearTfmsPlanSide(key, 'departures'); cancelled = true; }
+    diag(cancelled ? 'cancelled' : 'cancel-no-row');
+    return cancelled;
+  }
 
   // A row that only ever came from ADS-B geometry was never filed to KSFO: TFMS now says it is
   // going elsewhere, so drop it (no DIVERT badge — it was a false positive, not a diversion).
-  if (existingArr && dest && !airportMatch(dest, AIRPORT_ICAO) && !existingArr.arrived && !existingArr.onGround
+  if (existingArr && dest && !airportMatch(dest, AIRPORT_ICAO) && !airportMatch(orig, AIRPORT_ICAO) && !existingArr.arrived && !existingArr.onGround
       && !isSwimishSource(existingArr.source) && existingArr.timeSource !== 'swim' && !lookupTfmsPlan(key, 'arrivals')) {
     movements.arrivals.delete(key);
     noteTfmsElsewhere([cs, tail, key], dest);
@@ -1450,8 +1507,8 @@ function ingestSwimFlightBlock(block, feedLabel) {
     return true;
   }
   // TFMS amend / arrival dest change: was on the KSFO arrivals board, now filed to KOAK or KSJC.
-  if (divertLbl && existingArr && !existingArr.arrived && !airportMatch(dest, AIRPORT_ICAO)
-      && !(type === 'DEPARTURE' && airportMatch(orig, AIRPORT_ICAO))) {
+  if (divertLbl && existingArr && sameInboundLeg && !existingArr.arrived && !existingArr.onGround && !airportMatch(dest, AIRPORT_ICAO)) {
+    clearTfmsPlanSide(key, 'arrivals');
     upsertMovement('arrivals', key, {
       ident: ident,
       callsign: cs || existingArr.callsign || '',
@@ -1476,6 +1533,16 @@ function ingestSwimFlightBlock(block, feedLabel) {
     return true;
   }
 
+  // Filed dest left KSFO for somewhere other than divert-hold airports — drop stale
+  // pre-arrival row. Never clear landed/on-ground inventory here (wait for actual departure).
+  if (existingArr && sameInboundLeg && dest && !existingArr.arrived && !existingArr.onGround && !airportMatch(dest, AIRPORT_ICAO) && !divertLbl) {
+    movements.arrivals.delete(key);
+    clearTfmsPlanSide(key, 'arrivals');
+    diag('dest-changed:' + dest);
+    persistDirty = true;
+    return true;
+  }
+
   if (!touchesHome) return false;
 
   function rememberIfKsfo(boardHint) {
@@ -1488,13 +1555,6 @@ function ingestSwimFlightBlock(block, feedLabel) {
     });
   }
 
-  // Filed dest left KSFO for somewhere other than divert-hold airports — drop stale
-  // pre-arrival row. Never clear landed/on-ground inventory here (wait for actual departure).
-  if (existingArr && !existingArr.arrived && !existingArr.onGround && !airportMatch(dest, AIRPORT_ICAO) && !divertLbl
-      && !(type === 'DEPARTURE' && airportMatch(orig, AIRPORT_ICAO))) {
-    movements.arrivals.delete(key);
-    did = true;
-  }
 
   if (type === 'ARRIVAL' && airportMatch(dest, AIRPORT_ICAO)) {
     if (!isoWithinTodayPT(eta || etd)) { diag('after-midnight'); return did; }
@@ -1550,6 +1610,10 @@ function ingestSwimFlightBlock(block, feedLabel) {
     }
   }
   diag(did ? ('board:' + type.toLowerCase()) : ('no-row:' + type.toLowerCase() + (eta || etd ? '' : ':notime')));
+  if (did && !eta && airportMatch(dest, AIRPORT_ICAO)) {
+    swimRawNoEta.push({ at: new Date().toISOString(), msgType: msgTypeRaw, acid: cs, xml: String(block).slice(0, 6000) });
+    if (swimRawNoEta.length > 8) swimRawNoEta.shift();
+  }
   if (did) persistDirty = true;
   return did;
 }
@@ -2312,6 +2376,7 @@ function removeLandedArrivalOnDeparture(key, patch) {
     }
     if (matches) {
       movements.arrivals.delete(arrivalKey);
+      clearTfmsPlanSide(arrivalKey, 'arrivals');
       delete groundCache[arrivalKey];
       removed = true;
     }
@@ -2918,13 +2983,21 @@ function backfillBoardFromAdsbList(list) {
         if (!flight && !reg) continue;
         var match = (cs && flight && cs === flight) ||
           (id && reg && id === reg) ||
-          (cs && reg && identAliases.get(cs) === identAliases.get(reg)) ||
+          (cs && reg && identAliases.get(cs) && identAliases.get(cs) === identAliases.get(reg)) ||
           (flight && (flight === cs || flight === id || identAliases.get(flight) === key));
         if (!match) continue;
         if (needReg && isNRegIdent(reg)) {
           f.reg = reg;
           if (!isNRegIdent(normIdent(f.ident))) f.ident = reg;
           resolveBoardKey(reg, f.callsign || flight, ac.hex);
+          changed++;
+          needReg = false;
+        }
+        if (needReg && reg && !isNRegIdent(reg) && cs && flight === cs && !f.reg) {
+          // Foreign-registered bizjet (VJT793 → 9H-VIO): show the real tail, keep callsign under it.
+          f.reg = ac.r || reg;
+          if (normIdent(f.ident) === cs) f.ident = ac.r || reg;
+          extRegByCallsign.set(cs, ac.r || reg);
           changed++;
           needReg = false;
         }
@@ -2940,6 +3013,132 @@ function backfillBoardFromAdsbList(list) {
   applyToMap('arrivals');
   applyToMap('departures');
   return changed;
+}
+
+// A TFMS plan that is still in the future but has no board row (row lost to a bug, a restore
+// race, or an out-of-order message) is put back. Only real filed plans; nothing is invented.
+function rehydrateFromPlans() {
+  var now = Date.now();
+  var added = 0;
+  ['arrivals', 'departures'].forEach(function (board) {
+    var have = new Set();
+    movements[board].forEach(function (_f, mk) { have.add(mk); have.add(identAliases.get(mk) || mk); });
+    var seen = new Set();
+    tfmsPlanByAircraft.forEach(function (bag, k) {
+      var canon = identAliases.get(k) || k;
+      if (seen.has(canon) || have.has(canon) || have.has(k)) return;
+      var pl = bag && bag[board];
+      if (!pl) return;
+      seen.add(canon);
+      if (landedDroppedAt.has(canon) || landedDroppedAt.has(k)) return;
+      var tIso, ok;
+      if (board === 'arrivals') {
+        if (!airportMatch(pl.to, AIRPORT_ICAO) || airportMatch(pl.from, AIRPORT_ICAO)) return;
+        tIso = pl.arriveISO || '';
+        var depT = pl.departISO ? Date.parse(pl.departISO) : 0;
+        ok = tIso ? (Date.parse(tIso) > now - 5 * 60000) : (depT > now - 60000);
+        if (!tIso) tIso = pl.departISO;
+      } else {
+        if (!airportMatch(pl.from, AIRPORT_ICAO)) return;
+        tIso = pl.departISO || '';
+        ok = tIso && Date.parse(tIso) > now - 5 * 60000;
+      }
+      if (!ok || !isoWithinTodayPT(tIso)) return;
+      if (!isGaBizTraffic(pl.callsign || '', pl.reg || pl.ident || '', pl.type || '')) return;
+      var patch = {
+        ident: pl.ident || canon, callsign: pl.callsign || '', reg: pl.reg || '', type: pl.type || '',
+        from: pl.from || '', to: pl.to || '',
+        arriveISO: pl.arriveISO || '', arrive: pl.arriveISO ? fmtTimeLA(pl.arriveISO) : '',
+        departISO: pl.departISO || '', depart: pl.departISO ? fmtTimeLA(pl.departISO) : '',
+        source: 'swim', timeSource: 'swim', etaNote: ''
+      };
+      if (board === 'arrivals') Object.assign(patch, { filedDest: AIRPORT_ICAO, divertTo: '', divertAirport: '', divertAt: 0, arrived: false });
+      else patch.departed = false;
+      upsertMovement(board, canon, patch);
+      swimDiag.rehydrated = (swimDiag.rehydrated || 0) + 1;
+      swimDiagNote({ at: new Date().toISOString(), msgType: 'rehydrate', acid: pl.callsign || '', tail: pl.reg || '', type: pl.type || '', orig: pl.from || '', dest: pl.to || '', eta: pl.arriveISO || '', etd: pl.departISO || '', src: '', decision: 'rehydrated:' + board });
+      added++;
+    });
+  });
+  if (added) persistDirty = true;
+  return added;
+}
+
+// adsb.lol callsign lookup (rate-limited) for KSFO-bound rows/held plans that lack a type or
+// only show a callsign: gives the broadcast registration + ICAO type (VJT793 → 9H-VIO GL7T).
+var csLookupAt = new Map();
+var csLookupLastRun = 0;
+var csLookupStats = { calls: 0, hits: 0, lastAcid: '', lastResult: '' };
+function csLookupCandidates() {
+  var now = Date.now();
+  var out = [];
+  movements.arrivals.forEach(function (f) {
+    if (!f || f.arrived || f.onGround || !f.callsign) return;
+    var needType = !normalizeIcaoType(f.type);
+    var needReg = !f.reg && !isNRegIdent(normIdent(f.ident)) && !inferFracNReg(f.callsign);
+    if (!needType && !needReg) return;
+    var t = Date.parse(f.arriveISO || '') || 0;
+    if (t && (t < now - 30 * 60000 || t > now + 8 * 3600000)) return;
+    out.push(f.callsign);
+  });
+  tfmsPendingUntyped.forEach(function (p) {
+    if (p && p.toHome && p.cs && now - p.at < 6 * 3600000) out.push(p.cs);
+  });
+  return out.filter(function (cs) {
+    var k = normIdent(cs);
+    return k && now - (csLookupAt.get(k) || 0) > 15 * 60000;
+  });
+}
+async function runCallsignLookup() {
+  if (Date.now() - csLookupLastRun < 20000) return;
+  if (Date.now() < adsbLolBackoffUntil) return;
+  var cands = csLookupCandidates();
+  if (!cands.length) return;
+  csLookupLastRun = Date.now();
+  var cs = cands[0];
+  var csK = normIdent(cs);
+  csLookupAt.set(csK, Date.now());
+  var ctrl = new AbortController();
+  var timer = setTimeout(function () { ctrl.abort(); }, 10000);
+  try {
+    csLookupStats.calls++;
+    csLookupStats.lastAcid = csK;
+    var r = await fetch('https://api.adsb.lol/v2/callsign/' + encodeURIComponent(csK), {
+      signal: ctrl.signal,
+      headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0 (compatible; SkywayAirportBoard/250; +https://github.com/skyway4k/skyway-v250)' }
+    });
+    clearTimeout(timer);
+    if (!r.ok) { csLookupStats.lastResult = 'HTTP ' + r.status; if (r.status === 429) adsbLolBackoffUntil = Date.now() + 60000; return; }
+    var data = await r.json();
+    var ac = (Array.isArray(data.ac) ? data.ac : []).filter(function (a) { return normIdent(a.flight) === csK; })[0];
+    if (!ac) { csLookupStats.lastResult = 'not-airborne'; return; }
+    csLookupStats.hits++;
+    var typ = normalizeIcaoType(ac.t);
+    var reg = ac.r ? String(ac.r).trim().toUpperCase() : '';
+    csLookupStats.lastResult = (reg || '?') + ' ' + (typ || '?');
+    var changed = false;
+    if (typ) { rememberTfmsType([cs, reg], typ); if (promotePendingTfms(cs, typ)) changed = true; }
+    var rowKey = identAliases.get(csK) || csK;
+    var f = movements.arrivals.get(rowKey);
+    if (f) {
+      if (typ && !normalizeIcaoType(f.type)) { f.type = typ; changed = true; }
+      if (reg && !f.reg) {
+        f.reg = reg;
+        if (!isNRegIdent(normIdent(f.ident))) f.ident = reg;
+        changed = true;
+      }
+    }
+    if (reg && !isNRegIdent(normIdent(reg))) extRegByCallsign.set(csK, reg);
+    if (reg) {
+      var canon = linkIdents(reg, csK, ac.hex);
+      if (f && canon && canon !== rowKey) mergeMovementMaps(rowKey, canon);
+    }
+    if (changed) { persistDirty = true; broadcast({ type: 'board' }); }
+  } catch (e) {
+    csLookupStats.lastResult = 'err ' + e.message;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function buildBoard(kind) {
@@ -3095,6 +3294,9 @@ const server = http.createServer(async (req, res) => {
     });
     sendJSON(res, 200, Object.assign({}, swimDiag, {
       pendingUntyped: Array.from(tfmsPendingUntyped.keys()),
+      csLookup: csLookupStats,
+      extReg: Array.from(extRegByCallsign.entries()),
+      rawNoEta: (parsed.query && parsed.query.raw === '1') ? swimRawNoEta : swimRawNoEta.length,
       plans: plansOut,
       adsbBoard: adsbBoardStats,
       persist: persistStatus
@@ -3188,6 +3390,8 @@ wss.on('connection', ws => {
 // ------------------------------------------------------------------------------------------
 setInterval(pollOpenSkyFlights, 120000);
 setInterval(pollAdsbInboundBoard, 45000);
+setInterval(function () { runCallsignLookup().catch(function () {}); }, 20000);
+setInterval(function () { if (rehydrateFromPlans()) broadcast({ type: 'board' }); }, 60000);
 ensureFaaDb(false).catch(function (e) { log('[FAA DB] boot load: ' + e.message, 'WARN'); });
 setInterval(function () { ensureFaaDb(false).catch(function () {}); }, 24 * 3600 * 1000);
 
@@ -3207,6 +3411,14 @@ setInterval(function () { loadLaddBlocklist().catch(function () {}); }, 6 * 3600
 async function main() {
   await initSchema();
   await restoreSnapshot();
+  // Older snapshots may hold bare FAA LIDs ('SMO'); normalize, then put back any lost plan rows.
+  ['arrivals', 'departures'].forEach(function (b) {
+    movements[b].forEach(function (f) { if (f) { f.from = toIcaoAirport(f.from) || f.from; f.to = toIcaoAirport(f.to) || f.to; } });
+  });
+  tfmsPlanByAircraft.forEach(function (bag) {
+    ['arrivals', 'departures'].forEach(function (b) { var pl = bag && bag[b]; if (pl) { pl.from = toIcaoAirport(pl.from) || pl.from; pl.to = toIcaoAirport(pl.to) || pl.to; } });
+  });
+  try { rehydrateFromPlans(); } catch (e) { log('[persist] rehydrate failed: ' + e.message, 'WARN'); }
   await adbLoadUsage();
   await loadLaddBlocklist();
   server.listen(PORT, '0.0.0.0', () => log('Skyway v250 — http://0.0.0.0:' + PORT, 'OK'));
@@ -3262,6 +3474,6 @@ if (process.env.SKYWAY_TEST === '1') {
     buildBoard: buildBoard, isGaBizTraffic: isGaBizTraffic, swimDiag: swimDiag, tfmsPendingUntyped: tfmsPendingUntyped,
     promotePendingTfms: promotePendingTfms, saveSnapshot: saveSnapshot, restoreSnapshot: restoreSnapshot,
     buildSnapshot: buildSnapshot, pruneLandedArrivals: pruneLandedArrivals, pruneStaleAdsbOnly: pruneStaleAdsbOnly,
-    tfmsElsewhereFor: tfmsElsewhereFor, identAliases: identAliases
+    tfmsElsewhereFor: tfmsElsewhereFor, identAliases: identAliases, rehydrateFromPlans: rehydrateFromPlans, toIcaoAirport: toIcaoAirport, runCallsignLookup: runCallsignLookup
   };
 }

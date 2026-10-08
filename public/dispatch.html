@@ -1557,6 +1557,8 @@ function getFlag(code,isHeli){
     if(up.charAt(0)>='0'&&up.charAt(0)<='9')return'🇺🇸';
     var ch=up.charAt(0);
     if(code.length===3&&'ABCDEFGHIJLNOQRSTUW'.indexOf(ch)>=0&&up.charAt(1)>='0'&&up.charAt(1)<='9')return'🇺🇸';
+    // 3-letter all-alpha codes on this board are FAA LIDs (SMO, SFO, LAS) — US, not ICAO prefixes
+    if(code.length===3&&/^[A-Z]{3}$/.test(up))return'🇺🇸';
   }
   // For helicopters: if code starts with C but isn't CY_/CZ_ (actual Canadian), default to US
   // Private helipads in CA often have C-prefixed codes that aren't Canadian ICAO
