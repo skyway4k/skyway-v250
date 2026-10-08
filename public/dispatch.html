@@ -3670,10 +3670,51 @@ function hydrateRampState(){
     }
   }).catch(function(e){console.warn('[ramp] hydrate failed, using local cache only:',e.message);});
 }
-function syncRampToServer(planeId,fields){
+// Ramp writes need the shared RAMP_EDIT_KEY (server env). Asked once per device on the first
+// edit, kept in localStorage, sent as X-Skyway-Key. A 401 clears it and asks again; 503 means the
+// server has no key configured (edits disabled) so we never prompt for that.
+var RAMP_KEY_LS='skyway_ramp_edit_key';
+function rampKeyGet(){try{return localStorage.getItem(RAMP_KEY_LS)||'';}catch(e){return window._rampKeyMem||'';}}
+function rampKeySet(k){window._rampKeyMem=k;try{if(k)localStorage.setItem(RAMP_KEY_LS,k);else localStorage.removeItem(RAMP_KEY_LS);}catch(e){}}
+function rampKeyPrompt(msg){
+  var k=window.prompt(msg||'Enter the Skyway ramp edit key (saved on this device):','');
+  k=(k||'').trim();
+  if(k)rampKeySet(k);
+  return k;
+}
+function rampEditsDisabledOnServer(){
+  var st=window._creditStatus;
+  return !!(st&&st.rampEdit&&st.rampEdit.enabled===false);
+}
+function rampToast(msg){
+  try{
+    var t=document.getElementById('ramp-auth-toast');
+    if(!t){t=document.createElement('div');t.id='ramp-auth-toast';
+      t.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#b42318;color:#fff;font-family:var(--mono,monospace);font-size:12px;font-weight:700;padding:10px 16px;border-radius:8px;z-index:10050;box-shadow:0 8px 30px rgba(0,0,0,.35);cursor:pointer;max-width:90vw';
+      t.onclick=function(){t.style.display='none';};
+      document.body.appendChild(t);}
+    t.textContent=msg;t.style.display='block';
+    clearTimeout(window._rampToastT);window._rampToastT=setTimeout(function(){t.style.display='none';},7000);
+  }catch(e){}
+  console.warn('[ramp] '+msg);
+}
+function syncRampToServer(planeId,fields,_retried){
   if(VIEW_MODE!=='dispatch'&&!(VIEW_MODE==='line-room'&&Object.keys(fields).length===1&&'spot' in fields))return;
+  if(rampEditsDisabledOnServer()){rampToast('Not saved: ramp edits are disabled on the server (RAMP_EDIT_KEY not set).');return;}
+  var key=rampKeyGet()||rampKeyPrompt();
+  if(!key){rampToast('Not saved to server: ramp edit key required.');return;}
   fetch('/api/'+VIEW_MODE+'/ramp/'+encodeURIComponent(planeId),{
-    method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(fields)
+    method:'PATCH',headers:{'Content-Type':'application/json','X-Skyway-Key':key},body:JSON.stringify(fields)
+  }).then(function(r){
+    if(r.ok)return;
+    if(r.status===401){
+      rampKeySet('');
+      if(!_retried&&rampKeyPrompt('Ramp edit key was rejected. Enter the Skyway ramp edit key:'))return syncRampToServer(planeId,fields,true);
+      rampToast('Not saved to server: ramp edit key rejected.');return;
+    }
+    if(r.status===503){rampToast('Not saved: ramp edits are disabled on the server (RAMP_EDIT_KEY not set).');return;}
+    if(r.status===409){rampToast('Not saved: ramp fields are not editable for LADD-blocked aircraft.');return;}
+    rampToast('Ramp save failed (HTTP '+r.status+').');
   }).catch(function(e){console.warn('[ramp] save failed (will retry on next edit):',e.message);});
 }
 function schedulePaxSave(inputEl){

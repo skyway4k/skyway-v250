@@ -73,6 +73,15 @@ const SWIM_URL_SFDPS = process.env.SWIM_URL_SFDPS || SWIM_URL;
 const SWIM_VPN_SFDPS = process.env.SWIM_VPN_SFDPS || 'FDPS';
 const LADD_URL = process.env.LADD_URL || '';
 const LADD_FILE = process.env.LADD_FILE || '';
+// LADD list refresh cadence (hours). Default daily.
+const LADD_REFRESH_HOURS = Math.max(1, parseFloat(process.env.LADD_REFRESH_HOURS || '24') || 24);
+// FAA SCDS connection guideline §3.1.3: consumers should request compressed transport.
+// solclientjs SessionProperties.compressionLevel (zlib 1-9; 0 = off). On tcps:// the session
+// connects on the normal TLS port and negotiates compression at login. Default 1.
+const SWIM_COMPRESSION_LEVEL = (function () {
+  var v = parseInt(process.env.SWIM_COMPRESSION_LEVEL || '1', 10);
+  return (isNaN(v) || v < 0 || v > 9) ? 1 : v;
+})();
 
 const ADB_ENABLED = process.env.ADB_ENABLED === '1';
 const ADB_KEY = process.env.ADB_KEY || '';
@@ -1172,13 +1181,23 @@ function connectSWIM() {
     }
   }
 
+  // Per-feed compression state. If a compressed session never comes UP (2 failed connects in a
+  // row), fall back to uncompressed for that feed so ingest isn't lost; /status shows it.
+  var compression = { tfms: SWIM_COMPRESSION_LEVEL, sfdps: SWIM_COMPRESSION_LEVEL };
+  var compressedFails = { tfms: 0, sfdps: 0 };
+  var everUp = { tfms: false, sfdps: false };
+
   function openSession(url, vpn, queueName, feedLabel) {
-    log('Connecting to SWIM ' + feedLabel + ' (' + vpn + ')...');
+    var level = compression[feedLabel] || 0;
+    if (swimStats.feeds[feedLabel]) swimStats.feeds[feedLabel].compressionLevel = level;
+    log('Connecting to SWIM ' + feedLabel + ' (' + vpn + ', compressionLevel=' + level + ')...');
     var sess = solace.SolclientFactory.createSession({
       url: url, vpnName: vpn, userName: SWIM_USER, password: SWIM_PASS,
+      compressionLevel: level,
       connectRetries: 3, reconnectRetries: 10, reconnectRetryWaitInMsecs: 5000
     });
     sess.on(solace.SessionEventCode.UP_NOTICE, function () {
+      everUp[feedLabel] = true; compressedFails[feedLabel] = 0;
       swimStats.connected = true; swimStats.reason = '';
       if (swimStats.feeds[feedLabel]) swimStats.feeds[feedLabel].connected = true;
       log('SWIM ' + feedLabel + ' connected ✓', 'OK');
@@ -1202,6 +1221,11 @@ function connectSWIM() {
       if (swimStats.feeds[feedLabel]) swimStats.feeds[feedLabel].connected = false;
       swimStats.reason = (e && e.infoStr) || 'connect failed';
       log('SWIM ' + feedLabel + ' connect failed: ' + swimStats.reason, 'ERR');
+      if (level > 0 && !everUp[feedLabel] && ++compressedFails[feedLabel] >= 2) {
+        compression[feedLabel] = 0;
+        if (swimStats.feeds[feedLabel]) swimStats.feeds[feedLabel].compressionNote = 'compressed connect failed twice (' + swimStats.reason + ') — fell back to compressionLevel 0';
+        log('SWIM ' + feedLabel + ' falling back to uncompressed session after 2 failed compressed connects', 'WARN');
+      }
       broadcast({ type: 'status', data: buildStatusPayload() });
       scheduleFreshSession('connect failed', 60000);
     });
@@ -1562,7 +1586,9 @@ function ingestSwimFlightBlock(block, feedLabel) {
       (feedLabel === 'sfdps')) type = 'FLIGHT_PLAN';
 
   if (!cs && !tail) return false;
-  if (isLaddBlocked(tail, cs) || swimBlockLaddBlocked(block)) { diag('ladd-blocked'); return false; }
+  // LADD: rows are kept (type/origin/times stay useful) and masked to BLOCKED at every public
+  // output. A message-level privacy/distribution flag adds the aircraft to the runtime block set.
+  if (swimBlockLaddBlocked(block)) noteSwimPrivacy([cs, tail]);
 
   // Remember Bay-area destinations for ADS-B false-positive rejection (cheap; GA-ish only).
   var destN = normAirport(dest); if (destN.length === 3) destN = 'K' + destN;
@@ -2039,67 +2065,200 @@ async function adbEnrichIfGap(movement) {
 
 // ============================================================================================
 // LADD — Industry Limited Aircraft Data Distribution block list
-// FAA/NBAA Industry LADD is not a free public streaming API. ADX / NBAA often require a manual
-// download or member portal fetch. Hook: set LADD_URL (http/https text or JSON) or LADD_FILE
-// (local path). When unavailable, we stub an empty set and keep a clear TODO for operators.
-// Blocked regs/callsigns are filtered off public boards (privacy).
-// TODO(LADD/ADX): If your org has ADX access, periodically download Industry LADD and point
-// LADD_FILE at it (one registration or callsign per line, or JSON array of strings). LADD_URL
-// may work when a stable HTTPS endpoint exists for your account — do not commit the list.
+// Sources: LADD_FILE (path) and/or LADD_URL (private HTTPS, never logged) — CSV with a header,
+// plain text one reg/callsign per line, or a JSON array. Unioned, loaded at boot, refreshed every
+// LADD_REFRESH_HOURS (default 24); a failed refresh keeps the last good list for that source.
+// Matching SWIM rows stay on the board but every public API masks ident/reg/callsign → BLOCKED
+// (type, origin/destination and times kept). Do not commit the list itself.
 // ============================================================================================
-var laddBlocked = new Set();
-var laddStatus = { loaded: false, count: 0, source: '', error: '', source: 'stub' };
+var laddBlocked = new Set();           // union of every loaded LADD source (normalized idents)
+var laddSets = { file: null, url: null }; // last good set per source (kept if a refresh fails)
+var laddSrcStatus = { file: null, url: null };
+var laddStatus = { loaded: false, count: 0, source: 'stub', error: '', at: 0 };
+var swimPrivacyFlagged = new Map();       // normIdent -> lastSeenMs (SWIM message carried a LADD/privacy flag)
+var LADD_MASK = 'BLOCKED';
+function noteSwimPrivacy(ids) {
+  var now = Date.now();
+  (ids || []).forEach(function (v) { var n = normIdent(v); if (n && n.length >= 2) swimPrivacyFlagged.set(n, now); });
+  if (swimPrivacyFlagged.size > 5000) {
+    swimPrivacyFlagged.forEach(function (t, k) { if (now - t > 48 * 3600000) swimPrivacyFlagged.delete(k); });
+    while (swimPrivacyFlagged.size > 5000) swimPrivacyFlagged.delete(swimPrivacyFlagged.keys().next().value);
+  }
+}
+function laddHas(n) { return !!n && (laddBlocked.has(n) || swimPrivacyFlagged.has(n)); }
 function isLaddBlocked(reg, callsign) {
-  var r = normIdent(reg), c = normIdent(callsign);
-  if (r && laddBlocked.has(r)) return true;
-  if (c && laddBlocked.has(c)) return true;
-  return false;
+  return laddHas(normIdent(reg)) || laddHas(normIdent(callsign));
 }
+function isLaddRow(f) {
+  if (!f) return false;
+  return laddHas(normIdent(f.reg)) || laddHas(normIdent(f.callsign)) || laddHas(normIdent(f.ident));
+}
+// Fields that would re-identify a masked aircraft (live position/hex/operator) are dropped; type,
+// origin/destination and times are kept. Ramp fields are blanked (they're keyed by the real tail).
+var LADD_STRIP_FIELDS = ['operator', 'owner', 'hex', 'icao24', 'lat', 'lon', 'alt', 'gs', 'track', 'heading', 'distNm', 'squawk', 'flightNumber'];
+function laddMaskRow(f) {
+  var o = Object.assign({}, f);
+  o.ident = LADD_MASK; o.callsign = LADD_MASK; o.reg = LADD_MASK;
+  LADD_STRIP_FIELDS.forEach(function (k) { delete o[k]; });
+  if ('spot' in o) o.spot = '';
+  if ('pax' in o) o.pax = null;
+  if ('flags' in o) o.flags = [];
+  if ('towNotes' in o) o.towNotes = '';
+  o.ladd = true;
+  return o;
+}
+function laddMaskIfBlocked(f) { return isLaddRow(f) ? laddMaskRow(f) : f; }
+// Raw SWIM XML kept for diagnostics: hide it when its acid / REG remark / registration is LADD.
+function laddRawBlockBlocked(xml) {
+  var x = String(xml || '');
+  if (swimBlockLaddBlocked(x)) return true;
+  var acid = xmlAttr(x, 'acid') || xval(x, 'aircraftId', 'aircraftIdentification');
+  var regM = x.match(/\bREG\/([A-Z0-9-]{3,8})\b/);
+  var reg = (regM && regM[1]) || xval(x, 'registration', 'aircraftRegistration', 'tailNumber');
+  return isLaddBlocked(reg, acid);
+}
+
+// ---- List parsing: CSV (header-aware), plain text (one per line), or JSON array -------------
+var LADD_HEADER_WORDS = /^(NNUMBER|NNUM|NNO|REGISTRATION|REGISTRATIONNUMBER|REGISTRATIONMARK|REG|REGNO|REGNUMBER|TAIL|TAILNUMBER|CALLSIGN|IDENT|ACID|AIRCRAFTID|AIRCRAFT|FLIGHTID)$/;
+function splitLaddCsvLine(line, delim) {
+  var out = [], cur = '', q = false;
+  for (var i = 0; i < line.length; i++) {
+    var ch = line[i];
+    if (q) {
+      if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (ch === '"') q = false;
+      else cur += ch;
+    } else if (ch === '"') q = true;
+    else if (ch === delim) { out.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+// strict: multi-column row without a recognized header — only take cells that look like an
+// ident (contain a digit, or a hyphenated foreign mark like C-FABC); skip names/notes.
+function laddIdentsFromCell(raw, hint, strict) {
+  var s = String(raw == null ? '' : raw).trim().replace(/^["']+|["']+$/g, '').trim().toUpperCase();
+  if (!s) return [];
+  var n = normIdent(s);
+  if (n.length < 2 || n.length > 8) return [];
+  if (!/[0-9]/.test(n) && LADD_HEADER_WORDS.test(n)) return [];
+  if (hint === 'nnumber') return [(s.indexOf('-') >= 0 || (/^N/.test(n) && /[0-9]/.test(n))) ? n : 'N' + n];
+  if (strict && !/[0-9]/.test(n) && !/^[A-Z0-9]{1,2}-[A-Z0-9]{2,5}$/.test(s)) return [];
+  var out = [n];
+  // Bare US N-number without its leading N (FAA registry style, e.g. "467QS"): block both forms.
+  if (/^[0-9][0-9A-Z]{0,4}$/.test(n) && s.indexOf('-') < 0) out.push('N' + n);
+  return out;
+}
+function parseLaddList(body) {
+  var raw = String(body || '').replace(/^\uFEFF/, '');
+  var out = new Set();
+  var t = raw.trim();
+  if (t[0] === '[' || t[0] === '{') {
+    try {
+      var j = JSON.parse(t), items = [];
+      if (Array.isArray(j)) items = j;
+      else if (j && Array.isArray(j.aircraft)) items = j.aircraft;
+      else if (j && Array.isArray(j.registrations)) items = j.registrations;
+      items.forEach(function (v) {
+        if (v && typeof v === 'object') {
+          [v.registration, v.reg, v.tail, v.nNumber, v.callsign, v.callSign].forEach(function (x) { if (x) laddIdentsFromCell(x, '', false).forEach(function (n) { out.add(n); }); });
+        } else laddIdentsFromCell(v, '', false).forEach(function (n) { out.add(n); });
+      });
+      return out;
+    } catch (e) { /* not JSON — fall through to text/CSV */ }
+  }
+  var lines = raw.split(/\r?\n/).map(function (l) { return l.replace(/\s+#.*$/, '').trim(); })
+    .filter(function (l) { return l && l[0] !== '#' && l.slice(0, 2) !== '//'; });
+  if (!lines.length) return out;
+  var cands = [',', '\t', ';', '|'], delim = null, best = 0;
+  cands.forEach(function (d) { var c = lines[0].split(d).length - 1; if (c > best) { best = c; delim = d; } });
+  function cells(line) { return delim ? splitLaddCsvLine(line, delim) : line.split(/\s+/); }
+  var head = cells(lines[0]), identCols = [], hints = {};
+  head.forEach(function (h, i) {
+    var k = String(h).trim().replace(/^["']+|["']+$/g, '').toUpperCase();
+    if (/^N[-_ ]?(NUMBER|NUM|NO)\b/.test(k)) { identCols.push(i); hints[i] = 'nnumber'; }
+    else if (/REGIST|^REG\b|^REG$|TAIL|CALL ?-?SIGN|^IDENT|^ACID|AIRCRAFT ?ID/.test(k)) identCols.push(i);
+  });
+  var startAt = identCols.length ? 1 : 0;
+  for (var li = startAt; li < lines.length; li++) {
+    var c = cells(lines[li]);
+    if (identCols.length) {
+      identCols.forEach(function (ci) { laddIdentsFromCell(c[ci], hints[ci] || '', false).forEach(function (n) { out.add(n); }); });
+    } else {
+      var strict = c.length > 1;
+      c.forEach(function (cell) { laddIdentsFromCell(cell, '', strict).forEach(function (n) { out.add(n); }); });
+    }
+  }
+  return out;
+}
+// Back-compat helper (scripts/tests): replace the whole list from one text body.
 function ingestLaddText(body, sourceLabel) {
-  laddBlocked = new Set();
-  var raw = String(body || '');
-  var items = [];
-  try {
-    var j = JSON.parse(raw);
-    if (Array.isArray(j)) items = j;
-    else if (j && Array.isArray(j.aircraft)) items = j.aircraft;
-    else if (j && Array.isArray(j.registrations)) items = j.registrations;
-  } catch (e) {
-    items = raw.split(/[\r\n,;]+/);
-  }
-  for (var i = 0; i < items.length; i++) {
-    var v = items[i];
-    if (v && typeof v === 'object') v = v.registration || v.reg || v.callsign || v.tail || '';
-    var n = normIdent(v);
-    if (n && n.length >= 2) laddBlocked.add(n);
-  }
-  laddStatus = { loaded: true, count: laddBlocked.size, source: sourceLabel, error: '', at: Date.now() };
-  log('[LADD] loaded ' + laddBlocked.size + ' blocked idents from ' + sourceLabel, 'OK');
+  laddSets[sourceLabel === 'url' ? 'url' : 'file'] = parseLaddList(body);
+  rebuildLaddUnion();
 }
+function rebuildLaddUnion() {
+  var u = new Set();
+  ['file', 'url'].forEach(function (k) { if (laddSets[k]) laddSets[k].forEach(function (n) { u.add(n); }); });
+  laddBlocked = u;
+  var src = ['file', 'url'].filter(function (k) { return !!laddSets[k]; });
+  laddStatus = Object.assign({}, laddStatus, { loaded: src.length > 0, count: u.size, source: src.length ? src.join('+') : laddStatus.source });
+}
+var laddNextRefreshAt = 0;
 async function loadLaddBlocklist() {
-  try {
-    if (LADD_URL) {
-      var r = await fetch(LADD_URL, { headers: { 'Accept': 'application/json,text/plain,*/*' } });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      await ingestLaddText(await r.text(), 'url');
-      return;
-    }
-    if (LADD_FILE) {
-      var fsPath = LADD_FILE;
-      if (!fs.existsSync(fsPath)) throw new Error('LADD_FILE not found: ' + fsPath);
-      ingestLaddText(fs.readFileSync(fsPath, 'utf8'), 'file');
-      return;
-    }
-    laddStatus = {
-      loaded: false, count: 0, source: 'stub',
-      error: 'No LADD_URL/LADD_FILE — Industry LADD not loaded (ADX manual download may be required)',
-      at: Date.now()
-    };
-    log('[LADD] stub active — set LADD_URL or LADD_FILE when Industry LADD is available (ADX may need manual download)', 'INFO');
-  } catch (e) {
-    laddStatus = { loaded: false, count: 0, source: 'error', error: e.message, at: Date.now() };
-    log('[LADD] load failed: ' + e.message, 'WARN');
+  var now = Date.now();
+  laddNextRefreshAt = now + LADD_REFRESH_HOURS * 3600000;
+  if (!LADD_URL && !LADD_FILE) {
+    laddStatus = { loaded: false, count: 0, source: 'stub', error: 'No LADD_FILE/LADD_URL configured — Industry LADD not loaded', at: now };
+    log('[LADD] not loaded — set LADD_FILE and/or LADD_URL (FAA Industry LADD list)', 'INFO');
+    return;
   }
+  var errs = [];
+  if (LADD_FILE) {
+    try {
+      if (!fs.existsSync(LADD_FILE)) throw new Error('LADD_FILE not found');
+      var fset = parseLaddList(fs.readFileSync(LADD_FILE, 'utf8'));
+      laddSets.file = fset;
+      laddSrcStatus.file = { ok: true, count: fset.size, at: now, error: '' };
+    } catch (e) {
+      laddSrcStatus.file = Object.assign({}, laddSrcStatus.file || {}, { ok: false, error: e.message, lastAttemptAt: now, keptPrevious: !!laddSets.file });
+      errs.push('file: ' + e.message);
+    }
+  }
+  if (LADD_URL) {
+    var ctrl = new AbortController();
+    var timer = setTimeout(function () { ctrl.abort(); }, 30000);
+    try {
+      // Never log LADD_URL itself (it may carry an access token).
+      var r = await fetch(LADD_URL, { signal: ctrl.signal, headers: { 'Accept': 'text/csv,text/plain,application/json,*/*' } });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      var uset = parseLaddList(await r.text());
+      laddSets.url = uset;
+      laddSrcStatus.url = { ok: true, count: uset.size, at: now, error: '' };
+    } catch (e2) {
+      var msg = e2.name === 'AbortError' ? 'timeout' : e2.message;
+      laddSrcStatus.url = Object.assign({}, laddSrcStatus.url || {}, { ok: false, error: msg, lastAttemptAt: now, keptPrevious: !!laddSets.url });
+      errs.push('url: ' + msg);
+    } finally { clearTimeout(timer); }
+  }
+  rebuildLaddUnion();
+  laddStatus.error = errs.join('; ');
+  laddStatus.at = now;
+  if (laddStatus.loaded) log('[LADD] ' + laddBlocked.size + ' blocked idents loaded (' + laddStatus.source + ')' + (errs.length ? ' — refresh errors: ' + laddStatus.error : ''), errs.length ? 'WARN' : 'OK');
+  else log('[LADD] load failed: ' + laddStatus.error, 'WARN');
+}
+function laddStatusPayload() {
+  return {
+    loaded: !!laddStatus.loaded,
+    count: laddStatus.loaded ? laddBlocked.size : 'not loaded',
+    source: laddStatus.source || 'stub',
+    sources: { file: LADD_FILE ? (laddSrcStatus.file || { pending: true }) : null, url: LADD_URL ? (laddSrcStatus.url || { pending: true }) : null },
+    swimFlagged: swimPrivacyFlagged.size,
+    refreshHours: LADD_REFRESH_HOURS,
+    lastLoadAt: laddStatus.at ? new Date(laddStatus.at).toISOString() : null,
+    nextRefreshAt: laddNextRefreshAt ? new Date(laddNextRefreshAt).toISOString() : null,
+    error: laddStatus.error || null
+  };
 }
 
 // ============================================================================================
@@ -3306,7 +3465,9 @@ async function buildBoard(kind) {
     // Safety net: never surface airline/airliner rows on KSFO GA boards regardless of source.
     var boardCs = f.callsign || '';
     var boardReg = f.reg || f.ident || '';
-    if (isLaddBlocked(boardReg, boardCs)) continue;
+    // LADD: SWIM rows are masked (ident/reg/callsign → BLOCKED) below; non-SWIM rows stay dropped.
+    var laddHit = isLaddBlocked(boardReg, boardCs) || isLaddRow(f);
+    if (laddHit && !(isSwimishSource(f.source) || f.timeSource === 'swim')) continue;
     if (!isGaBizTraffic(boardCs, boardReg, f.type || '')) continue;
     // Drop opposite-leg bleed (arrival showing KSFO→elsewhere, departure showing elsewhere→KSFO).
     if (kind === 'arrivals' && !f.divertTo && airportMatch(f.from, AIRPORT_ICAO) && f.to && !airportMatch(f.to, AIRPORT_ICAO)) continue;
@@ -3330,6 +3491,7 @@ async function buildBoard(kind) {
     f.pax = ramp ? ramp.pax : null;
     f.flags = ramp ? ramp.flags : [];
     f.towNotes = ramp ? ramp.towNotes : '';
+    if (laddHit) f = laddMaskRow(f);
     list.push(f);
   }
   list.sort(function (a, b) {
@@ -3378,7 +3540,8 @@ function buildStatusPayload() {
     swim: swimStats,
     adb: adbStatus(),
     faaRegistry: { cacheSize: faaMemCache.size, inflight: faaInflight.size, dbLoaded: !!faaDbStatus.loaded, dbCount: faaDbStatus.count || 0, dbError: faaDbStatus.error || null },
-    ladd: { loaded: !!laddStatus.loaded, count: laddStatus.count || 0, source: laddStatus.source || 'stub', error: laddStatus.error || null },
+    ladd: laddStatusPayload(),
+    rampEdit: { enabled: !!rampEditKey(), auth: 'X-Skyway-Key or Authorization: Bearer' },
     adsbLol: Object.assign(adsbLolStatusPayload(), {
       backoffSecondsRemaining: Math.max(0, Math.ceil((adsbLolBackoffUntil - Date.now()) / 1000))
     }),
@@ -3402,8 +3565,103 @@ function buildStatusPayload() {
   });
 }
 
+
+// ============================================================================================
+// RAMP WRITE AUTH — shared secret for PATCH /api/{dispatch|line-room}/ramp/:id
+// Env: RAMP_EDIT_KEY. Clients send X-Skyway-Key: <key> or Authorization: Bearer <key>.
+// The dispatch/line-room UI prompts once and stores the key in localStorage (skyway_ramp_edit_key).
+// If the env var is unset, every write is rejected with 503 — never left open.
+// ============================================================================================
+function rampEditKey() {
+  var k = process.env.RAMP_EDIT_KEY;
+  return (k && String(k).trim()) || '';
+}
+function extractRampEditKey(req) {
+  var h = req.headers || {};
+  var x = h['x-skyway-key'];
+  if (x != null && String(x).trim()) return String(x).trim();
+  var auth = h['authorization'] || h['Authorization'] || '';
+  var m = String(auth).match(/^\s*Bearer\s+(\S+)\s*$/i);
+  return m ? m[1] : '';
+}
+function timingSafeEqualStr(a, b) {
+  var ba = Buffer.from(String(a || ''), 'utf8');
+  var bb = Buffer.from(String(b || ''), 'utf8');
+  if (ba.length !== bb.length) {
+    // Still run a comparison so length differences don't short-circuit the timing path.
+    require('crypto').timingSafeEqual(ba.length ? ba : Buffer.alloc(1), Buffer.alloc(ba.length || 1));
+    return false;
+  }
+  if (!ba.length) return false;
+  return require('crypto').timingSafeEqual(ba, bb);
+}
+function requireRampEditAuth(req, res) {
+  var expected = rampEditKey();
+  if (!expected) {
+    sendJSON(res, 503, { error: 'ramp edits disabled: set RAMP_EDIT_KEY' });
+    return false;
+  }
+  var got = extractRampEditKey(req);
+  if (!got || !timingSafeEqualStr(got, expected)) {
+    sendJSON(res, 401, { error: 'unauthorized — send X-Skyway-Key or Authorization: Bearer with RAMP_EDIT_KEY' });
+    return false;
+  }
+  return true;
+}
+
+// Public SWIM-only board for AirLoom (and similar consumers). LADD-masked, no ramp fields,
+// no OpenSky/adsb wake — reads the in-memory SWIM movements map only.
+var SWIM_ARRIVAL_FIELDS = ['ident', 'callsign', 'reg', 'type', 'model', 'from', 'to', 'filedDest', 'divertTo', 'departISO', 'arriveISO', 'arrived', 'onGround', 'intl', 'source'];
+function pickSwimPublicFields(f) {
+  var o = {};
+  for (var i = 0; i < SWIM_ARRIVAL_FIELDS.length; i++) {
+    var k = SWIM_ARRIVAL_FIELDS[i];
+    if (f[k] !== undefined) o[k] = f[k];
+  }
+  return o;
+}
+function buildSwimArrivals(airportQ) {
+  var apt = String(airportQ || AIRPORT_ICAO).toUpperCase().replace(/[^A-Z0-9]/g, '') || AIRPORT_ICAO;
+  var rows = [];
+  movements.arrivals.forEach(function (f) {
+    if (!f) return;
+    if (!(isSwimishSource(f.source) || f.timeSource === 'swim')) return;
+    // Keep home-airport arrivals (filedDest or to matches requested airport).
+    if (!airportMatch(f.to, apt) && !airportMatch(f.filedDest, apt)) return;
+    if (f.divertAt && (Date.now() - f.divertAt) > DIVERT_HOLD_MS) return;
+    var src = Object.assign({}, f);
+    src.intl = !!f.intl || isIntlCode(f.from || '');
+    if (!src.model) { var icaoT = normalizeIcaoType(f.type); if (icaoT && ICAO_TO_LAYMAN[icaoT]) src.model = ICAO_TO_LAYMAN[icaoT]; }
+    src.arrived = !!f.arrived; src.onGround = !!f.onGround;
+    if (isLaddRow(f) || isLaddBlocked(f.reg || f.ident, f.callsign)) src = laddMaskRow(src);
+    var row = pickSwimPublicFields(src);
+    rows.push(row);
+  });
+  rows.sort(function (a, b) { return String(a.arriveISO || '').localeCompare(String(b.arriveISO || '')); });
+  return {
+    airport: apt,
+    generatedAt: new Date().toISOString(),
+    count: rows.length,
+    feed: {
+      swim: {
+        connected: !!swimStats.connected,
+        msgs: swimStats.msgs || 0,
+        arrivals: swimStats.arrivals || 0,
+        departures: swimStats.departures || 0,
+        reason: swimStats.reason || '',
+        feeds: swimStats.feeds
+      },
+      ladd: laddStatusPayload()
+    },
+    rows: rows
+  };
+}
+
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
+  // CORS is open for reads only. Ramp writes are same-origin (Skyway's own UI) or non-browser
+  // clients holding RAMP_EDIT_KEY: preflight never grants PATCH or the key header cross-origin.
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
   var parsed = url.parse(req.url, true);
   var pathname = parsed.pathname;
@@ -3439,19 +3697,28 @@ const server = http.createServer(async (req, res) => {
     tfmsPlanByAircraft.forEach(function (bag, k) {
       ['arrivals', 'departures'].forEach(function (b) {
         var pl = bag && bag[b];
-        if (pl) plansOut.push({ key: k, board: b, ident: pl.ident, callsign: pl.callsign, type: pl.type, from: pl.from, to: pl.to, depart: pl.depart, arrive: pl.arrive });
+        if (!pl) return;
+        var hid = isLaddBlocked(pl.reg || pl.ident, pl.callsign) || isLaddBlocked(k, '');
+        plansOut.push({ key: hid ? LADD_MASK : k, board: b, ident: hid ? LADD_MASK : pl.ident, callsign: hid ? LADD_MASK : pl.callsign, type: pl.type, from: pl.from, to: pl.to, depart: pl.depart, arrive: pl.arrive });
       });
     });
     sendJSON(res, 200, Object.assign({}, swimDiag, {
-      pendingUntyped: Array.from(tfmsPendingUntyped.keys()),
-      csLookup: csLookupStats,
-      extReg: Array.from(extRegByCallsign.entries()),
-      rawNoEta: (parsed.query && parsed.query.raw === '1') ? swimRawNoEta : swimRawNoEta.length,
-      trackDepSamples: (parsed.query && parsed.query.raw === '1') ? swimTrackDepSamples : swimTrackDepSamples.length,
+      recent: swimDiag.recent.map(function (e) { return isLaddBlocked(e.tail, e.acid) ? Object.assign({}, e, { acid: LADD_MASK, tail: LADD_MASK }) : e; }),
+      pendingUntyped: Array.from(tfmsPendingUntyped.keys()).filter(function (k) { return !isLaddBlocked(k, k); }),
+      csLookup: isLaddBlocked(csLookupStats.lastAcid, csLookupStats.lastAcid) ? Object.assign({}, csLookupStats, { lastAcid: LADD_MASK, lastResult: '' }) : csLookupStats,
+      extReg: Array.from(extRegByCallsign.entries()).filter(function (e) { return !isLaddBlocked(e[1], e[0]); }),
+      rawNoEta: (parsed.query && parsed.query.raw === '1') ? swimRawNoEta.filter(function (e) { return !isLaddBlocked('', e.acid) && !laddRawBlockBlocked(e.xml); }) : swimRawNoEta.length,
+      trackDepSamples: (parsed.query && parsed.query.raw === '1') ? swimTrackDepSamples.filter(function (x) { return !laddRawBlockBlocked(x); }) : swimTrackDepSamples.length,
       plans: plansOut,
       adsbBoard: adsbBoardStats,
       persist: persistStatus
     }));
+    return;
+  }
+
+  // AirLoom SWIM feed — read-only, LADD-masked, no ramp fields, does not wake ADS-B/OpenSky polling.
+  if (pathname === '/api/swim/arrivals' && (req.method === 'GET' || req.method === 'HEAD')) {
+    sendJSON(res, 200, buildSwimArrivals(parsed.query && parsed.query.airport));
     return;
   }
 
@@ -3471,6 +3738,7 @@ const server = http.createServer(async (req, res) => {
         spot: ramp ? ramp.spot : '', pax: ramp ? ramp.pax : null, flags: ramp ? ramp.flags : [], towNotes: ramp ? ramp.towNotes : ''
       });
     });
+    ground = ground.map(laddMaskIfBlocked);
     ground.sort(function (a, b) { return (b.arrivedISO || '').localeCompare(a.arrivedISO || ''); });
     sendJSON(res, 200, ground); return;
   }
@@ -3480,18 +3748,21 @@ const server = http.createServer(async (req, res) => {
     if (!ident || ident.length < 2 || ident.length > 10 || !/^[A-Z0-9-]+$/.test(ident)) { sendJSON(res, 400, { error: 'invalid ident format' }); return; }
     var key = ident.replace(/[^A-Z0-9]/g, '');
     var found = movements.arrivals.get(key) || movements.departures.get(key) || null;
+    if (isLaddBlocked(key, key) || (found && isLaddRow(found))) found = null;
     var out = { ident: ident, type: found ? found.type : null, model: null, owner: null, flights: [], lastArrival: null, nextDeparture: null };
     if (ADB_ENABLED && found) await adbEnrichIfGap(found);
     if (found) out.type = found.type || out.type;
     sendJSON(res, 200, out); return;
   }
 
-  if (pathname === '/api/ramp' && req.method === 'GET') { touchActivity(); sendJSON(res, 200, await getAllRampState()); return; }
+  if (pathname === '/api/ramp' && req.method === 'GET') { touchActivity(); sendJSON(res, 200, (await getAllRampState()).filter(function (r) { return !isLaddBlocked(r.id, r.id); })); return; }
 
   var rampWrite = pathname.match(/^\/api\/(dispatch|line-room)\/ramp\/([^\/]+)$/);
   if (rampWrite && req.method === 'PATCH') {
+    if (!requireRampEditAuth(req, res)) return;
     touchActivity();
     var view = rampWrite[1], id = decodeURIComponent(rampWrite[2]).toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!id || id === LADD_MASK || isLaddBlocked(id, id)) { sendJSON(res, 409, { error: 'ramp fields are not editable for LADD-masked aircraft' }); return; }
     var chunks = [];
     req.on('data', c => chunks.push(c));
     req.on('end', async () => {
@@ -3515,6 +3786,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method !== 'GET' && req.method !== 'HEAD') { sendJSON(res, 405, { error: 'method not allowed' }); return; }
   sendJSON(res, 200, { name: 'Skyway v250', views: ['/dispatch', '/line-room', '/lobby', '/gm', '/arrivals', '/airloom'], fuelPricePerGal: FUEL_PRICE_PER_GAL });
 });
 
@@ -3557,7 +3829,7 @@ setInterval(function () {
   if (persistDirty || Date.now() - lastForcedSave > 5 * 60000) { lastForcedSave = Date.now(); saveSnapshot('interval'); }
 }, 60000);
 setInterval(function () { if (pruneTfmsPlansPastMidnight()) broadcast({ type: 'board' }); }, 300000);
-setInterval(function () { loadLaddBlocklist().catch(function () {}); }, 6 * 3600000);
+setInterval(function () { loadLaddBlocklist().catch(function () {}); }, LADD_REFRESH_HOURS * 3600000);
 
 async function main() {
   await initSchema();
@@ -3585,6 +3857,9 @@ async function main() {
     log('SWIM skipped — set SWIM_ENABLED=1 with SWIM_USER/SWIM_PASS/SWIM_QUEUE when SWIFT is restored', 'WARN');
   }
   log('Views: /dispatch  /line-room  /lobby  /gm  /arrivals  /airloom', 'OK');
+  log('GET /api/swim/arrivals — SWIM-only board for AirLoom (LADD-masked, no ramp fields)', 'INFO');
+  log('Ramp writes: ' + (rampEditKey() ? 'auth required (X-Skyway-Key / Bearer)' : 'DISABLED until RAMP_EDIT_KEY is set'), rampEditKey() ? 'OK' : 'WARN');
+
   log('FUEL_PRICE_PER_GAL=$' + FUEL_PRICE_PER_GAL.toFixed(2) + ' (GM cost estimates)', 'INFO');
   log('AeroDataBox: ' + (ADB_ENABLED ? ('ENABLED, budget ' + ADB_MONTHLY_UNIT_BUDGET + ' units/mo') : 'disabled (set ADB_ENABLED=1 to turn on)'), 'INFO');
   log('ADSB primary: ' + ADSB_PRIMARY + ' (set ADSB_PRIMARY=opensky to force OpenSky)', 'INFO');
@@ -3626,6 +3901,7 @@ if (process.env.SKYWAY_TEST === '1') {
     buildBoard: buildBoard, isGaBizTraffic: isGaBizTraffic, swimDiag: swimDiag, tfmsPendingUntyped: tfmsPendingUntyped,
     promotePendingTfms: promotePendingTfms, saveSnapshot: saveSnapshot, restoreSnapshot: restoreSnapshot,
     buildSnapshot: buildSnapshot, pruneLandedArrivals: pruneLandedArrivals, pruneStaleAdsbOnly: pruneStaleAdsbOnly,
-    tfmsElsewhereFor: tfmsElsewhereFor, identAliases: identAliases, boardWindowInfo: boardWindowInfo, sunEventUtcMs: sunEventUtcMs, isoWithinTodayPT: isoWithinTodayPT, pruneTfmsPlansPastMidnight: pruneTfmsPlansPastMidnight, rehydrateFromPlans: rehydrateFromPlans, repairMisDeparted: repairMisDeparted, toIcaoAirport: toIcaoAirport, runCallsignLookup: runCallsignLookup
+    tfmsElsewhereFor: tfmsElsewhereFor, identAliases: identAliases, boardWindowInfo: boardWindowInfo, sunEventUtcMs: sunEventUtcMs, isoWithinTodayPT: isoWithinTodayPT, pruneTfmsPlansPastMidnight: pruneTfmsPlansPastMidnight, rehydrateFromPlans: rehydrateFromPlans, repairMisDeparted: repairMisDeparted, toIcaoAirport: toIcaoAirport, runCallsignLookup: runCallsignLookup,
+    isLaddBlocked: isLaddBlocked, laddMaskRow: laddMaskRow, parseLaddList: parseLaddList, ingestLaddText: ingestLaddText, buildSwimArrivals: buildSwimArrivals, loadLaddBlocklist: loadLaddBlocklist, laddBlocked: laddBlocked, requireRampEditAuth: requireRampEditAuth, laddStatusPayload: laddStatusPayload
   };
 }

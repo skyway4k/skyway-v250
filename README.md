@@ -95,7 +95,22 @@ want a specific bbox tightened and I'll size it against the real formula.
 
 Board schedule window is **through midnight America/Los_Angeles** (not a rolling 8h).
 Optional **SFDPS** second SWIM consumer: set `SWIM_QUEUE_SFDPS` after SWIFT portal
-subscription (see `.env.example`). Optional **Industry LADD** via `LADD_URL`/`LADD_FILE`.
+subscription (see `.env.example`). Both SWIM sessions request `compressionLevel: 1`
+(FAA SCDS guideline §3.1.3; override with `SWIM_COMPRESSION_LEVEL`).
+
+**Industry LADD** via `LADD_FILE` and/or `LADD_URL` (CSV or one reg/callsign per line), loaded at
+boot and refreshed daily. Matching SWIM rows are masked on every public API (`ident`/`reg`/
+`callsign` → `BLOCKED`, type/origin/times kept); `/status` → `ladd.count` (or `'not loaded'`).
+
+**Ramp writes need `RAMP_EDIT_KEY`.** `PATCH /api/{dispatch|line-room}/ramp/:id` requires
+`X-Skyway-Key: <key>` (or `Authorization: Bearer <key>`); wrong/missing key → 401, env unset →
+503 `ramp edits disabled: set RAMP_EDIT_KEY`. CORS preflight never grants PATCH cross-origin.
+The /dispatch and /line-room pages prompt for the key once per device (stored in localStorage).
+
+**`GET /api/swim/arrivals?airport=KSFO`** — read-only SWIM-only arrivals for AirLoom: fields
+`ident, callsign, reg, type, model, from, to, filedDest, divertTo, departISO, arriveISO, arrived,
+onGround, intl, source` plus `feed` health (SWIM + LADD). LADD-masked, no ramp fields, CORS `*`,
+and it does not count as client activity (won't wake OpenSky/adsb polling).
 
 AeroDataBox stays off (`ADB_ENABLED=0` in `.env.example`) until you decide SWIM+OpenSky are
 leaving real gaps. When you do: get a RapidAPI key, set `ADB_ENABLED=1` and `ADB_KEY`, and set
