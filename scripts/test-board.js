@@ -89,7 +89,12 @@ function batch(list) {
     assert.strictEqual(S.repairMisDeparted(), 1, 'repair');
     assert.strictEqual(S.movements.departures.get(k).departed, false);
   }
-  console.log('next-leg / SMO / rehydrate / amend / traj-ETA / repair OK');
+  { // SFO-origin trackInformation → departed
+    S.handleSwimMsg(batch([{ acid: 'N88WR', dep: 'KSFO', arr: 'KLAS', msgType: 'trackInformation', etd: iso(-10), eta: iso(70) }]), 'tfms');
+    const d = [...S.movements.departures.values()].find(f => f.ident === 'N88WR');
+    assert(d && d.departed === true, 'track → departed');
+  }
+  console.log('next-leg / SMO / rehydrate / amend / traj-ETA / repair / track-departed OK');
   // 3) ADS-B evidence geometry
   const SFO = [37.6213, -122.3790];
   function pt(brgFromField, distNm) { // position at bearing/dist from SFO

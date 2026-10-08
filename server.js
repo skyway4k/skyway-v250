@@ -1458,6 +1458,7 @@ function clearTfmsPlanSide(key, board) {
   persistDirty = true;
 }
 var swimRawNoEta = [];
+var swimTrackDepSamples = [];
 var extRegByCallsign = new Map(); // normalized callsign -> registration as broadcast by ADS-B (e.g. 9H-VIO) // last few raw KSFO GA blocks that carried no ETA (to fix parsing)
 function ingestSwimFlightBlock(block, feedLabel) {
   // TFMS R14 fltdMessage attributes (acid/depArpt/arrArpt) + nested nxce/nxcm tags.
@@ -1721,13 +1722,24 @@ function ingestSwimFlightBlock(block, feedLabel) {
       if (isoWithinTodayPT(etd)) {
         swimStats.departures++;
         rememberIfKsfo('departures');
-        upsertMovement('departures', key, {
+        var depPatch = {
           ident: ident, callsign: cs || '', reg: tail || '', type: acType || '',
           from: orig || AIRPORT_ICAO, to: dest || '',
           departISO: etd || '', depart: etd ? fmtTimeLA(etd) : '',
           arriveISO: eta || '', arrive: eta ? fmtTimeLA(eta) : '',
           source: srcTag, timeSource: 'swim', etaNote: ''
-        });
+        };
+        // TFMS only sends trackInformation for a flight with a live radar track: an SFO-origin
+        // track means it is airborne → DEPARTED. Use the actual departure time when TFMS gives one.
+        if (msgType === 'trackinformation') {
+          var actOpen = (block.match(/<(?:\w+:)?etd\b[^>]*etdType="ACTUAL"[^>]*>/i) || [])[0] || '';
+          var actDep = parseIsoLoose(xmlAttr(actOpen, 'timeValue') || xval(block, 'actualDepartureTime', 'actualOffBlockTime', 'actualTakeOffTime'));
+          depPatch.departed = true;
+          if (actDep) { depPatch.departISO = actDep; depPatch.depart = fmtTimeLA(actDep); depPatch.departActual = true; }
+          if (swimTrackDepSamples.length < 3) swimTrackDepSamples.push(String(block).slice(0, 4000));
+        }
+        upsertMovement('departures', key, depPatch);
+        if (depPatch.departed) removeLandedArrivalOnDeparture(key, depPatch);
         did = true;
       }
     }
@@ -3435,6 +3447,7 @@ const server = http.createServer(async (req, res) => {
       csLookup: csLookupStats,
       extReg: Array.from(extRegByCallsign.entries()),
       rawNoEta: (parsed.query && parsed.query.raw === '1') ? swimRawNoEta : swimRawNoEta.length,
+      trackDepSamples: (parsed.query && parsed.query.raw === '1') ? swimTrackDepSamples : swimTrackDepSamples.length,
       plans: plansOut,
       adsbBoard: adsbBoardStats,
       persist: persistStatus
