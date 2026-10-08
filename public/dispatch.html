@@ -154,8 +154,8 @@ body{font-family:var(--sans);background:var(--b0);color:var(--t1);min-height:100
 .resize-bar:hover .resize-grip{background:var(--blue)}
 .empty{text-align:center;padding:28px;color:var(--t3);font-family:var(--mono);font-size:11px}
 ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:3px}::-webkit-scrollbar-thumb:hover{background:#9ca3af}
-.bb .fr:nth-child(even){background:rgba(0,0,0,.02)}
-.bb .fr:nth-child(odd){background:var(--b1)}
+/* One row style on every board — no zebra striping (it flipped line-room rows to a light
+   background under near-white text). */
 
 
 .spot-dd{z-index:10000;background:var(--b1);border:1px solid var(--bd);border-radius:4px;box-shadow:0 4px 12px rgba(0,0,0,.3);padding:4px 0;overflow-y:auto;min-width:140px}
@@ -611,6 +611,131 @@ body.view-line-room .pax-ro{font-size:15px!important}
   body.view-line-room .fi{font-size:9px!important}
   body.view-line-room .ft,body.view-line-room .ff,body.view-line-room .fm,body.view-line-room .fe{font-size:8px!important}
   body.view-line-room .spot-click{font-size:7px!important}
+}
+
+/* =====================================================================================
+   READABILITY PASS (all views). Last rules in the sheet so they win the cascade.
+   ===================================================================================== */
+.eta-clk{display:none}
+/* Never break IDENT / ETA mid-word (was "N123N J", "LANDE D"); give them real track floors. */
+:root{
+  --arr-grid:minmax(6.2rem,1.15fr) minmax(1.75rem,.45fr) minmax(2rem,.55fr) minmax(2.5rem,1.15fr) minmax(2.5rem,1.35fr) minmax(2.25rem,.95fr) minmax(2.25rem,.95fr) minmax(3.8rem,.8fr) minmax(2.5rem,.8fr) minmax(2rem,.55fr);
+  --dep-grid:minmax(6.2rem,1.15fr) minmax(1.75rem,.45fr) minmax(2rem,.55fr) minmax(2.5rem,1.15fr) minmax(2.5rem,1.35fr) minmax(2.25rem,.95fr) minmax(3.8rem,.8fr) minmax(2.5rem,.8fr);
+  --arr-done-grid:minmax(6.2rem,1.15fr) minmax(1.75rem,.45fr) minmax(2rem,.55fr) minmax(2.5rem,1.15fr) minmax(2.5rem,1.35fr) minmax(2.25rem,.95fr) minmax(2.25rem,.95fr) minmax(3.8rem,.8fr) minmax(2.5rem,.8fr);
+  --dep-done-grid:minmax(6.2rem,1.15fr) minmax(1.75rem,.45fr) minmax(2rem,.55fr) minmax(2.5rem,1.15fr) minmax(2.5rem,1.35fr) minmax(2.25rem,.95fr) minmax(3.8rem,.8fr) minmax(2.5rem,.8fr);
+}
+.bb .fr .fi,.bb .fr .fe{white-space:nowrap!important;overflow-wrap:normal!important;word-break:normal!important}
+.bb .fr .fi .sub{white-space:nowrap}
+.bb .fr .ft,.bb .fr .ff,.bb .fr .fm,.bb .fr .ft .sub,.bb .fr .ff .sub{overflow-wrap:normal!important;word-break:normal!important}
+/* Line room: one dark row style, high-contrast text everywhere on the boards. */
+body.view-line-room{--green:#4ade80;--amber:#fbbf24;--cyan:#22d3ee;--t3:#94a3b8}
+body.view-line-room .board{background:#161b26}
+body.view-line-room .bh{background:linear-gradient(180deg,#232b3d,#1b2130);border-bottom-color:#334058}
+body.view-line-room .bc{color:#cbd5e1!important}
+body.view-line-room .bt.ar{color:#60a5fa}
+body.view-line-room .bt.de{color:#f87171}
+body.view-line-room .board>.cols{background:#222a3b!important;color:#cbd5e1!important;border-bottom-color:#334058}
+body.view-line-room .bb .fr{background:#1b2130;border-color:#334058}
+body.view-line-room .bb .fr:hover{background:#222a3b}
+body.view-line-room .bb .fr .fi{color:#f8fafc!important}
+body.view-line-room .bb .fr .fi .sub{color:#cbd5e1!important}
+body.view-line-room .bb .fr .ft,body.view-line-room .bb .fr .ff,body.view-line-room .bb .fr .fm,body.view-line-room .bb .fr .pax-ro{color:#e2e8f0!important}
+body.view-line-room .bb .fr .sub{color:#aab4c8!important}
+body.view-line-room .bb .fr .ff.intl,body.view-line-room .bb .fr .ff.intl .sub{color:#93c5fd!important}
+body.view-line-room .bb .fr .fe.soon{color:#4ade80}
+body.view-line-room .bb .fr .fe.mid{color:#fbbf24}
+body.view-line-room .bb .fr .fe.far{color:#cbd5e1}
+body.view-line-room .empty{color:#94a3b8}
+
+/* Tablets / phone landscape (coarse pointer, 601–900px): the older 6.5–9px sizes were
+   unreadable. Same columns (board still scrolls as one unit at min-width 560px). */
+@media (min-width:601px) and (max-width:900px) and (hover:none) and (pointer:coarse){
+  html body .board>.cols{font-size:9.5px!important;padding:5px 6px!important;letter-spacing:.4px!important}
+  html body .board .fr{font-size:12px!important;padding:7px 6px!important;gap:3px!important}
+  html body .board .fr .fi{font-size:15px!important;line-height:1.2!important}
+  html body .board .fr .ft,html body .board .fr .ff,html body .board .fr .fm,html body .board .fr .fe{font-size:12px!important}
+  html body .board .fr .sub{font-size:10px!important}
+  html body .board .fr .spot-click{font-size:11px!important}
+  html body .board .fr .pax-ro{font-size:12px!important}
+  html body .board>.cols>span,html body .board .fr>*{word-break:normal!important;overflow-wrap:normal!important}
+}
+
+/* Phone portrait (≤600px): fewer, wider columns that fit the screen —
+   IDENT · TYPE · FROM/TO · ETA (clock under it) · SPOT [· PAX]. DEPART/ARRIVE columns are
+   hidden; operator/status badges drop to a second line under the row. Nothing is split
+   mid-word: IDENT/ETA/PAX never wrap, model/city sub-lines ellipsize. */
+@media (max-width:600px){
+  html body .board>.bh,html body .board>.cols,html body .board>.bb,html body .board .fr{min-width:0!important}
+  html body .board>.bh,html body .board>.cols,html body .board>.bb{width:100%}
+  html body .board{overflow-x:auto}
+  html body .board>.bb{padding:4px!important}
+  html body .board .bh{padding:8px 10px!important}
+  html body .board .bt{font-size:12px!important;letter-spacing:.6px}
+  html body .board .bc{font-size:13px!important}
+  html body .board>.cols{font-size:10px!important;padding:6px 8px!important;letter-spacing:.4px!important;column-gap:6px!important}
+  html body .board .fr{font-size:14px!important;padding:9px 8px!important;column-gap:6px!important;row-gap:3px!important;align-items:center!important;margin-bottom:4px!important;border-radius:6px!important;min-height:0!important;box-shadow:none}
+  html body .board>.cols>span,html body .board .fr>*{word-break:normal!important;overflow-wrap:normal!important;-webkit-hyphens:none;hyphens:none}
+  /* IDENT: tail is the big line, callsign under it */
+  html body .board .fr .fi{display:block!important;font-size:17px!important;line-height:1.15!important;padding-left:12px!important;white-space:nowrap!important;font-weight:800!important}
+  html body .board .fr .fi .sub{display:block!important;font-size:12px!important;font-weight:600!important;margin-top:2px;white-space:nowrap!important;width:auto!important}
+  html body .board .fr .live-dot{top:6px;left:2px}
+  /* TYPE: ICAO code on one line, short model on the next (ellipsis, never mid-word) */
+  html body .board .fr .ft{font-size:15px!important;line-height:1.15!important;align-items:flex-start!important;text-align:left!important;white-space:nowrap!important}
+  html body .board .fr .ft .sub,html body .board .fr .ff .sub{display:block!important;font-family:var(--sans);font-size:11px!important;font-weight:500!important;max-width:100%;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+  html body .board .fr .ff{font-size:14px!important;line-height:1.15!important;align-items:flex-start!important;text-align:left!important;display:block!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis}
+  html body .board .fr .ff .intl-badge{display:none}
+  html body .board .fr .fe{font-size:15px!important;line-height:1.15!important;white-space:nowrap!important}
+  html body .board .fr .fe .eta-clk{display:block!important;font-size:11px!important;font-weight:600!important;color:var(--t3)}
+  html body .board .fr .fm{font-size:13px!important;white-space:nowrap}
+  html body .board .fr .spot-click{font-size:13px!important;white-space:normal!important}
+  html body .board .fr .pax{width:2.2rem!important;min-width:0!important;font-size:13px!important;padding:3px 2px!important}
+  html body .board .fr .pax-ro{font-size:13px!important}
+  html body .board .fr .ramp-edit-btn{width:20px;height:20px;line-height:18px;font-size:11px}
+  html body .board .fr .pax-cell{gap:2px}
+  /* Badges (OP / customs / divert / QT / VIP / GPU / MED / flags) → second line */
+  html body .board .fr>.fop,html body .board .fr>.fst{grid-row:2;justify-content:flex-start!important}
+  html body .board .fr>.fop{grid-column:1}
+  html body .board .fr>.fst{grid-column:2/-1}
+  html body .board .fr>.fop:empty,html body .board .fr>.fst:empty{display:none!important}
+  html body .board .fr>.fst>span,html body .board .fr>.fop>span{font-size:10px!important;padding:2px 5px!important}
+  html body:not(.view-lobby) .board>.cols>span:nth-child(2),
+  html body:not(.view-lobby) .board>.cols>span:nth-child(3){display:none!important}
+
+  /* Dispatch + Line room */
+  /* Active arrivals: ident op st type from [depart] [arrive] eta spot pax */
+  html body:not(.view-lobby):not(.view-gm) .board>.cols.ca,
+  html body:not(.view-lobby):not(.view-gm) #ab .fr{grid-template-columns:minmax(4.9rem,1.2fr) minmax(0,1.15fr) minmax(0,1fr) minmax(3.4rem,.8fr) minmax(0,.6fr) minmax(2.3rem,.5fr)!important}
+  html body:not(.view-lobby):not(.view-gm) .board>.cols.ca>span:nth-child(6),
+  html body:not(.view-lobby):not(.view-gm) .board>.cols.ca>span:nth-child(7),
+  html body:not(.view-lobby):not(.view-gm) #ab .fr>:nth-child(6),
+  html body:not(.view-lobby):not(.view-gm) #ab .fr>:nth-child(7){display:none!important}
+  /* Active departures: ident op st type to [depart] etd spot */
+  html body:not(.view-lobby):not(.view-gm) .board>.cols.cd,
+  html body:not(.view-lobby):not(.view-gm) #db .fr{grid-template-columns:minmax(4.9rem,1.25fr) minmax(0,1fr) minmax(0,1fr) minmax(3.4rem,.85fr) minmax(0,.8fr)!important}
+  html body:not(.view-lobby):not(.view-gm) .board>.cols.cd>span:nth-child(6),
+  html body:not(.view-lobby):not(.view-gm) #db .fr>:nth-child(6){display:none!important}
+  /* Arrived: ident op st type from [depart] arrive time spot */
+  html body:not(.view-lobby):not(.view-gm) .board>.cols.ca-done,
+  html body:not(.view-lobby):not(.view-gm) #adb .fr{grid-template-columns:minmax(4.9rem,1.25fr) minmax(0,1fr) minmax(0,1fr) minmax(2.9rem,.7fr) minmax(2.9rem,.7fr) minmax(0,.75fr)!important}
+  html body:not(.view-lobby):not(.view-gm) .board>.cols.ca-done>span:nth-child(6),
+  html body:not(.view-lobby):not(.view-gm) #adb .fr>:nth-child(6){display:none!important}
+  /* Departed: ident op st type to [depart] time spot */
+  html body:not(.view-lobby):not(.view-gm) .board>.cols.cd-done,
+  html body:not(.view-lobby):not(.view-gm) #ddb .fr{grid-template-columns:minmax(4.9rem,1.25fr) minmax(0,1fr) minmax(0,1fr) minmax(2.9rem,.75fr) minmax(0,.8fr)!important}
+  html body:not(.view-lobby):not(.view-gm) .board>.cols.cd-done>span:nth-child(6),
+  html body:not(.view-lobby):not(.view-gm) #ddb .fr>:nth-child(6){display:none!important}
+
+  /* GM: ident op st type route pax [gal] cost vip */
+  html body.view-gm .board>.cols.ca,html body.view-gm .board>.cols.cd,
+  html body.view-gm .board>.cols.ca-done,html body.view-gm .board>.cols.cd-done,
+  html body.view-gm #ab .fr,html body.view-gm #db .fr,html body.view-gm #adb .fr,html body.view-gm #ddb .fr{grid-template-columns:minmax(4.9rem,1.2fr) minmax(0,.85fr) minmax(0,1.2fr) minmax(1.8rem,.4fr) minmax(0,.9fr) minmax(0,.75fr)!important}
+  html body.view-gm .board>.cols>span:nth-child(7),
+  html body.view-gm .bb .fr>:nth-child(7){display:none!important}
+  html body.view-gm .bb .fr .ff{white-space:normal!important}
+
+  /* Lobby: ident · type · eta, big */
+  html body.view-lobby .board>.cols,html body.view-lobby .bb .fr{grid-template-columns:minmax(5.5rem,1.3fr) minmax(0,1.1fr) minmax(3.6rem,.8fr)!important}
+  html body.view-lobby .board .fr .fe{font-size:16px!important}
 }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -2517,6 +2642,9 @@ function mkRow(f,cls,done){
   // class "sub" which has flex-basis:100% so it gets its own line. Per-path return sites build a
   // combined subRow that puts callsign + all badges (op, vip, med, qt) into this same line so
   // badges have a deterministic position instead of wrapping unpredictably at narrow widths.
+  // Callsign line under the tail only when it adds information (N128SH/N128SH is noise).
+  var _csDiff=f.callsign&&safeStr(f.callsign).toUpperCase().replace(/[^A-Z0-9]/g,'')!==id.toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(!_csDiff){callsignSafe='';f=Object.assign({},f,{callsign:''});}
   var csSub=f.callsign?'<span class="sub">'+callsignSafe+'</span>':'';
   enrichFlightLoc(f,cls);
   var loc=cls==='ar'?safeStr(f.from):safeStr(f.to);
@@ -2543,8 +2671,11 @@ function mkRow(f,cls,done){
   var typeCodeSafe=htmlEsc(typeCode);
   var modelName=(f.model&&String(f.model).trim())||MODEL[typeCode]||'';
   // Desktop/tablet: ICAO on first line, FAA/layman model on second. Mobile denser: keep two-line via .sub.
-  var typeSub=modelName?'<span class="sub">'+htmlEsc(modelName)+'</span>':'';
-  if(!typeCode&&modelName){typeCodeSafe=htmlEsc(modelName);typeSub='';}
+  // Short model under the ICAO code (Gulfstream G550 → G550); full name in the tooltip. The
+  // phone layout ellipsizes it instead of breaking words mid-way.
+  var shortM=shortModelName(modelName);
+  var typeSub=modelName?'<span class="sub tm" title="'+htmlEsc(modelName)+'">'+htmlEsc(shortM)+'</span>':'';
+  if(!typeCode&&modelName){typeCodeSafe=htmlEsc(shortM);typeSub='';}
 
   // ---- LOBBY: minimal — IDENT (tail), plane type, ETA/ETD only; no edit ----
   if(VIEW_MODE==='lobby'){
@@ -2620,6 +2751,8 @@ function mkRow(f,cls,done){
       etaStr='<span title="'+htmlEsc(f.etaNote||'Estimated from live ADS-B position/speed')+'">~'+etaStr+'</span>';
     }
   }
+  var clockStr=cls==='ar'?arriveSafe:departSafe;
+  if(!done&&clockStr)etaStr+='<span class="sub eta-clk">'+clockStr+'</span>';
   var rowCls='';
   if(cls==='ar'&&!done)rowCls=' arr-active';
   else if(cls==='de'&&!done&&!f.departed)rowCls=' dep-ground';
@@ -2808,6 +2941,15 @@ function mkRow(f,cls,done){
   return '<div class="fr'+rowCls+flashClass+intlRowCls+(f.divertTo?' divert-row':'')+'"><span class="fi zp" data-zp="'+safeId+'">'+gd+idSafe+subRow+depBadgeHtml+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+customsBadge+divertBadge+qtBadge+vipBadge+gpuBadge+medBadge+customFlagsHtml+towHint+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+ffcls+'">'+flag+(flag?' ':'')+(locSafe||'—')+intlBadge+locSub+'</span><span class="fm">'+(departSafe||'—')+'</span><span class="fm">'+(arriveSafe||'—')+'</span><span class="'+fecls+'">'+etaStr+'</span>'+spotCell+'<span class="pax-cell">'+paxHtml+editBtn+'</span></div>';
 }
 
+var MODEL_MAKERS=/^(Gulfstream Aerospace|Gulfstream|Cessna|Textron|Bombardier|Embraer|Dassault Falcon|Dassault|Piper|Beechcraft|Beech|Raytheon|Cirrus|Pilatus|Hawker Beechcraft|Hawker|Honda|Daher|Socata|Mooney|Diamond|Israel Aircraft Industries|IAI|Airbus Helicopters|Eurocopter|Sikorsky|Robinson|Bell)\s+/i;
+function shortModelName(name){
+  var n=String(name||'').trim();
+  if(!n)return '';
+  var stripped=n.replace(MODEL_MAKERS,'');
+  // Keep the maker when stripping would leave only digits (Learjet 45 stays, "45" alone is useless).
+  if(!stripped||!/[A-Za-z]/.test(stripped))return n;
+  return stripped;
+}
 function calcMins(isoTime){
   if(!isoTime)return -1;
   var diff=Math.round((new Date(isoTime).getTime()-Date.now())/60000);
