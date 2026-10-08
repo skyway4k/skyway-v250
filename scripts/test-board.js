@@ -83,7 +83,13 @@ function batch(list) {
     assert.strictEqual(Date.parse(row.arriveISO) - Date.parse(etd), 3240000, 'traj ETA wrong');
     assert.strictEqual(row.from, 'KSMO');
   }
-  console.log('next-leg / SMO / rehydrate / amend / traj-ETA OK');
+  { // inbound mis-tagged as departed (tomorrow's next-leg plan) is repaired; next-leg msg doesn't steal inbound ETA
+    const k = S.identAliases.get('N938QS') || 'N938QS';
+    S.movements.departures.set(k, { ident: 'N938QS', callsign: 'EJA938', from: 'KSFO', to: 'KOMA', departed: true, departISO: iso(14 * 60), source: 'swim', timeSource: 'swim' });
+    assert.strictEqual(S.repairMisDeparted(), 1, 'repair');
+    assert.strictEqual(S.movements.departures.get(k).departed, false);
+  }
+  console.log('next-leg / SMO / rehydrate / amend / traj-ETA / repair OK');
   // 3) ADS-B evidence geometry
   const SFO = [37.6213, -122.3790];
   function pt(brgFromField, distNm) { // position at bearing/dist from SFO

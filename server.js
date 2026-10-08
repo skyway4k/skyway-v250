@@ -716,7 +716,7 @@ async function handleAdsbStates(query, res) {
 // turboprop types; drop airline callsigns (UAL/AAL/...) and airliner/heavy ICAO types.
 // Applied to ADS-B, SWIM/TFMS, and OpenSky /flights so boards stay GA/biz-heavy.
 // ============================================================================================
-var AIRLINE_CS = new Set(('UAL AAL DAL SWA ASA JBU NKS FFT SKW EDV RPA ASH ENY QXE HAL CPA BAW AFR DLH UAE CSG CCA CES CSN CHH CES FDX UPS GTI ATN ABX GTI VRD SCX WOA UAL CKS MPO JSX').split(/\s+/));
+var AIRLINE_CS = new Set(('UAL AAL DAL SWA ASA JBU NKS FFT SKW EDV RPA ASH ENY QXE HAL CPA BAW AFR DLH UAE CSG CCA CES CSN CHH CES FDX UPS GTI ATN ABX GTI VRD SCX WOA UAL CKS MPO JSX AMX ACA WJA ROU TSC LOT AVA FBU JAL ANA KAL AAR EVA SIA QFA ANZ CAL CSH CXA HVN PAL VIR KLM SWR AUA SAS FIN ICE EIN TAP IBE AZA ETD QTR THY ELY ETH TAM LAN LPE ARG CMP VOI VIV AIJ FJI HKE CRK TGW MXY VXP FLE AAY SCX SKV PDT CPZ GJS JIA').split(/\s+/));
 var FRAC_CS = /^(EJA|EJM|LXJ|TWY|JTL|XOJ|OPT|JRE|GTT|DPJ|VJT|GAJ|HRT|TIV|LNJ|CVC|CRE|QQE)/;
 // Small/mid/large-cabin bizjets, turboprops and piston GA. Large-cabin Gulfstream/Global
 // (GLF4/5/6, GL5T/GL7T/GL8T, GLEX) are in because FlightAware's KSFO GA list carries them.
@@ -1053,6 +1053,30 @@ function lookupTfmsPlan(key, board) {
   if (!board) return bag.arrivals || bag.departures || null;
   if (bag[board]) return bag[board];
   return null;
+}
+// Undo "departed" on a row whose filed departure is >60 min in the future while the same aircraft
+// still has an arrival row: that was an inbound mis-tagged by the old ADS-B plan-match rule.
+function repairMisDeparted() {
+  var now = Date.now(), fixed = 0;
+  movements.departures.forEach(function (f, key) {
+    if (!f || !f.departed) return;
+    var dms = Date.parse(f.departISO || '') || 0;
+    if (!dms || dms - now < 60 * 60000) return;
+    var canon = identAliases.get(key) || key;
+    if (!(movements.arrivals.has(key) || movements.arrivals.has(canon))) return;
+    f.departed = false; f.adsbProgress = false; f.alt = null; f.distNm = null; f.gs = null;
+    var pl = lookupTfmsPlan(key, 'departures');
+    if (pl) { f.arriveISO = pl.arriveISO || ''; f.arrive = pl.arrive || ''; }
+    fixed++;
+  });
+  // Arrival time before departure time is impossible (an inbound ETA copied onto a next leg): clear it.
+  function badEta(o) { var d = Date.parse(o && o.departISO || '') || 0, a = Date.parse(o && o.arriveISO || '') || 0; return d && a && a < d; }
+  movements.departures.forEach(function (f) { if (badEta(f)) { f.arriveISO = ''; f.arrive = ''; fixed++; } });
+  tfmsPlanByAircraft.forEach(function (bag) {
+    ['arrivals', 'departures'].forEach(function (b) { var pl = bag && bag[b]; if (badEta(pl)) { pl.arriveISO = ''; pl.arrive = ''; fixed++; } });
+  });
+  if (fixed) { persistDirty = true; log('[board] repaired ' + fixed + ' mis-tagged departed row(s) / impossible ETAs', 'WARN'); }
+  return fixed;
 }
 function pruneTfmsPlansPastMidnight() {
   var eod = endOfDayPTMs(Date.now());
@@ -1576,7 +1600,8 @@ function ingestSwimFlightBlock(block, feedLabel) {
   var touchesHome = airportMatch(orig, AIRPORT_ICAO) || airportMatch(dest, AIRPORT_ICAO);
   // A trajectory-derived ETA (igtd + elapsed) never overrides a real TFMS ETA already on the row
   // (igtd is the filed gate time; once airborne, trackInformation's ETA reflects the actual departure).
-  if (etaFromTraj && existingArr && existingArr.arriveISO && existingArr.etaSrc && existingArr.etaSrc !== 'traj') {
+  if (etaFromTraj && existingArr && existingArr.arriveISO && existingArr.etaSrc && existingArr.etaSrc !== 'traj'
+      && airportMatch(dest, AIRPORT_ICAO) && !airportMatch(orig, AIRPORT_ICAO)) {
     eta = existingArr.arriveISO; etaFromTraj = false;
   }
   // A message about the same aircraft's NEXT leg out of KSFO (orig=KSFO) or a different leg
@@ -2352,7 +2377,14 @@ async function pollAdsbInboundBoard() {
       var dev = adsbDepartureEvidence(geo, hexKey ? sfoLowSeen.get(hexKey) : 0);
       var brgOut = (brgIn + 180) % 360;
       var awayish = track != null && angleDiffDeg(track, brgOut) <= 70 && distNm <= 35 && alt >= 200 && alt <= 16000;
-      if (!(dev.ok || (hasPlanD && awayish))) continue;
+      // A plan-only match needs the filed departure to be near now, and the aircraft must not be an
+      // active KSFO inbound (N731QS on downwind with tomorrow's SFO→OMA plan was tagged "departed").
+      var planDepMs = Date.parse((existingD && existingD.departISO) || (planD && planD.departISO) || '') || 0;
+      var planNear = planDepMs && planDepMs <= nowMs + 45 * 60000 && planDepMs >= nowMs - 4 * 3600000;
+      var inboundRow = movements.arrivals.get(boardKey);
+      var isActiveInbound = !!(inboundRow && !inboundRow.arrived && !inboundRow.onGround);
+      if (!(dev.ok || (hasPlanD && awayish && planNear && !isActiveInbound))) continue;
+      if (isActiveInbound && !dev.ok) continue;
       var patchD = {
         ident: (reg || (existingD && existingD.ident) || ident),
         callsign: flight || (existingD && existingD.callsign) || ident,
@@ -3170,6 +3202,7 @@ function rehydrateFromPlans() {
 // only show a callsign: gives the broadcast registration + ICAO type (VJT793 → 9H-VIO GL7T).
 var csLookupAt = new Map();
 var csLookupLastRun = 0;
+var csLookupBackoffUntil = 0;
 var csLookupStats = { calls: 0, hits: 0, lastAcid: '', lastResult: '' };
 function csLookupCandidates() {
   var now = Date.now();
@@ -3184,7 +3217,8 @@ function csLookupCandidates() {
     out.push(f.callsign);
   });
   tfmsPendingUntyped.forEach(function (p) {
-    if (p && p.toHome && p.cs && now - p.at < 6 * 3600000) out.push(p.cs);
+    // Only unknown operators that could be GA/biz — scheduled carriers are skipped outright.
+    if (p && p.toHome && p.cs && now - p.at < 6 * 3600000 && !AIRLINE_CS.has(String(p.cs).toUpperCase().slice(0, 3))) out.push(p.cs);
   });
   return out.filter(function (cs) {
     var k = normIdent(cs);
@@ -3192,8 +3226,8 @@ function csLookupCandidates() {
   });
 }
 async function runCallsignLookup() {
-  if (Date.now() - csLookupLastRun < 20000) return;
-  if (Date.now() < adsbLolBackoffUntil) return;
+  if (Date.now() - csLookupLastRun < 30000) return;
+  if (Date.now() < adsbLolBackoffUntil || Date.now() < csLookupBackoffUntil) return;
   var cands = csLookupCandidates();
   if (!cands.length) return;
   csLookupLastRun = Date.now();
@@ -3210,7 +3244,7 @@ async function runCallsignLookup() {
       headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0 (compatible; SkywayAirportBoard/250; +https://github.com/skyway4k/skyway-v250)' }
     });
     clearTimeout(timer);
-    if (!r.ok) { csLookupStats.lastResult = 'HTTP ' + r.status; if (r.status === 429) adsbLolBackoffUntil = Date.now() + 60000; return; }
+    if (!r.ok) { csLookupStats.lastResult = 'HTTP ' + r.status; if (r.status === 429) csLookupBackoffUntil = Date.now() + 5 * 60000; return; }
     var data = await r.json();
     var ac = (Array.isArray(data.ac) ? data.ac : []).filter(function (a) { return normIdent(a.flight) === csK; })[0];
     if (!ac) { csLookupStats.lastResult = 'not-airborne'; return; }
@@ -3495,7 +3529,7 @@ wss.on('connection', ws => {
 setInterval(pollOpenSkyFlights, 120000);
 setInterval(pollAdsbInboundBoard, 45000);
 setInterval(function () { runCallsignLookup().catch(function () {}); }, 20000);
-setInterval(function () { if (rehydrateFromPlans()) broadcast({ type: 'board' }); }, 60000);
+setInterval(function () { var a = rehydrateFromPlans(), b = repairMisDeparted(); if (a || b) broadcast({ type: 'board' }); }, 60000);
 ensureFaaDb(false).catch(function (e) { log('[FAA DB] boot load: ' + e.message, 'WARN'); });
 setInterval(function () { ensureFaaDb(false).catch(function () {}); }, 24 * 3600 * 1000);
 
@@ -3523,6 +3557,7 @@ async function main() {
     ['arrivals', 'departures'].forEach(function (b) { var pl = bag && bag[b]; if (pl) { pl.from = toIcaoAirport(pl.from) || pl.from; pl.to = toIcaoAirport(pl.to) || pl.to; } });
   });
   try { rehydrateFromPlans(); } catch (e) { log('[persist] rehydrate failed: ' + e.message, 'WARN'); }
+  try { repairMisDeparted(); } catch (e) { log('[persist] repair failed: ' + e.message, 'WARN'); }
   await adbLoadUsage();
   await loadLaddBlocklist();
   server.listen(PORT, '0.0.0.0', () => log('Skyway v250 — http://0.0.0.0:' + PORT, 'OK'));
@@ -3578,6 +3613,6 @@ if (process.env.SKYWAY_TEST === '1') {
     buildBoard: buildBoard, isGaBizTraffic: isGaBizTraffic, swimDiag: swimDiag, tfmsPendingUntyped: tfmsPendingUntyped,
     promotePendingTfms: promotePendingTfms, saveSnapshot: saveSnapshot, restoreSnapshot: restoreSnapshot,
     buildSnapshot: buildSnapshot, pruneLandedArrivals: pruneLandedArrivals, pruneStaleAdsbOnly: pruneStaleAdsbOnly,
-    tfmsElsewhereFor: tfmsElsewhereFor, identAliases: identAliases, boardWindowInfo: boardWindowInfo, sunEventUtcMs: sunEventUtcMs, isoWithinTodayPT: isoWithinTodayPT, pruneTfmsPlansPastMidnight: pruneTfmsPlansPastMidnight, rehydrateFromPlans: rehydrateFromPlans, toIcaoAirport: toIcaoAirport, runCallsignLookup: runCallsignLookup
+    tfmsElsewhereFor: tfmsElsewhereFor, identAliases: identAliases, boardWindowInfo: boardWindowInfo, sunEventUtcMs: sunEventUtcMs, isoWithinTodayPT: isoWithinTodayPT, pruneTfmsPlansPastMidnight: pruneTfmsPlansPastMidnight, rehydrateFromPlans: rehydrateFromPlans, repairMisDeparted: repairMisDeparted, toIcaoAirport: toIcaoAirport, runCallsignLookup: runCallsignLookup
   };
 }
