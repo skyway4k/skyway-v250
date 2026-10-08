@@ -74,7 +74,16 @@ function batch(list) {
   a2 = await S.buildBoard('arrivals');
   assert(!a2.some(f => /N938QS/.test(f.ident)), 'amended-away row came back');
   S.handleSwimMsg(batch([{ acid: 'EJA938', dep: 'KSLC', arr: 'KSFO', msgType: 'flightPlanInformation', etd: iso(18), eta: iso(105), type: 'C68A' }]), 'tfms');
-  console.log('next-leg / SMO / rehydrate / amend OK');
+  { // FlightSectors (no <eta>): ETA = igtd + elapsedTime of the SFO fix
+    const etd = iso(30);
+    const xml = `<?xml version="1.0"?><ds:x xmlns:ds="urn:x"><fdm:fltdOutput><fdm:fltdMessage acid="EJA555" airline="EJA" arrArpt="SFO" depArpt="SMO" msgType="FlightSectors" sourceTimeStamp="${iso(-0.1)}"><fdm:ncsmFlightSectors><nxcm:qualifiedAircraftId><nxce:aircraftId>EJA555</nxce:aircraftId><nxce:igtd>${etd}</nxce:igtd><nxce:departurePoint><nxce:airport>SMO</nxce:airport></nxce:departurePoint><nxce:arrivalPoint><nxce:airport>SFO</nxce:airport></nxce:arrivalPoint></nxcm:qualifiedAircraftId><nxcm:flightTraversalData2><nxce:fix sequenceNumber="1">SMO</nxce:fix><nxce:fix elapsedTime="3240" sequenceNumber="2">SFO</nxce:fix></nxcm:flightTraversalData2></fdm:ncsmFlightSectors></fdm:fltdMessage></fdm:fltdOutput></ds:x>`;
+    S.handleSwimMsg({ getXmlContent: () => xml, getBinaryAttachment: () => null }, 'tfms');
+    const row = [...S.movements.arrivals.values()].find(f => f.callsign === 'EJA555');
+    assert(row && row.arriveISO, 'no traj ETA');
+    assert.strictEqual(Date.parse(row.arriveISO) - Date.parse(etd), 3240000, 'traj ETA wrong');
+    assert.strictEqual(row.from, 'KSMO');
+  }
+  console.log('next-leg / SMO / rehydrate / amend / traj-ETA OK');
   // 3) ADS-B evidence geometry
   const SFO = [37.6213, -122.3790];
   function pt(brgFromField, distNm) { // position at bearing/dist from SFO

@@ -1489,6 +1489,25 @@ function ingestSwimFlightBlock(block, feedLabel) {
     xmlAttr(block, 'arrivalTime') ||
     xval(block, 'earliestRunwayArrivalTime', 'estimatedArrivalTime', 'ETA', 'arrivalDateTime', 'gateArrivalTime', 'estimatedTimeOfArrival', 'actualLandingTime', 'arrivalTime', 'estimatedLandingTime')
   );
+  // Pre-departure TFMS FlightSectors/FlightRoute messages carry no <eta>, but their modeled
+  // trajectory lists the destination fix with elapsedTime (seconds after igtd). ETA = igtd + that.
+  var etaFromTraj = false;
+  if (!eta && etd && dest) {
+    var destCodes = [normAirport(dest)];
+    var dn = normAirport(dest);
+    if (dn.length === 4 && dn.charAt(0) === 'K') destCodes.push(dn.slice(1));
+    var fixRe = /<(?:\w+:)?fix\b([^>]*)>\s*([A-Z0-9]{3,5})\s*<\/(?:\w+:)?fix>/g, fm, elapsedSec = null;
+    while ((fm = fixRe.exec(block))) {
+      if (destCodes.indexOf(fm[2]) >= 0) {
+        var es = xmlAttr('<x ' + fm[1] + '>', 'elapsedTime');
+        if (es && /^\d+$/.test(es)) elapsedSec = +es;
+      }
+    }
+    if (elapsedSec && elapsedSec > 300 && elapsedSec < 20 * 3600) {
+      eta = new Date(Date.parse(etd) + elapsedSec * 1000).toISOString().replace(/\.\d+Z$/, 'Z');
+      etaFromTraj = true;
+    }
+  }
   var msgTypeRaw = xmlAttr(block, 'msgType') || '';
   var msgType = msgTypeRaw.toLowerCase();
   swimDiag.msgTypes[msgTypeRaw || '(none)'] = (swimDiag.msgTypes[msgTypeRaw || '(none)'] || 0) + 1;
@@ -1501,7 +1520,7 @@ function ingestSwimFlightBlock(block, feedLabel) {
   var homeTouch = airportMatch(orig, AIRPORT_ICAO) || airportMatch(dest, AIRPORT_ICAO);
   function diag(decision) {
     if (!homeTouch && !/^(dest-changed|divert|other-leg)/.test(decision)) return;
-    swimDiagNote({ at: new Date().toISOString(), msgType: msgTypeRaw, acid: cs || '', tail: tail || '', type: acType || '', orig: orig || '', dest: dest || '', eta: eta || '', etd: etd || '', src: srcTs || '', decision: decision });
+    swimDiagNote({ at: new Date().toISOString(), msgType: msgTypeRaw, acid: cs || '', tail: tail || '', type: acType || '', orig: orig || '', dest: dest || '', eta: eta || '', etaFrom: etaFromTraj ? 'igtd+trajectory' : (eta ? 'tfms-eta' : ''), etd: etd || '', src: srcTs || '', decision: decision });
   }
   var type = 'UNKNOWN';
   if (msgType.indexOf('cancel') >= 0) type = 'CANCEL';
@@ -1555,6 +1574,11 @@ function ingestSwimFlightBlock(block, feedLabel) {
   var divertLbl = divertLabel(dest);
   var existingArr = movements.arrivals.get(key);
   var touchesHome = airportMatch(orig, AIRPORT_ICAO) || airportMatch(dest, AIRPORT_ICAO);
+  // A trajectory-derived ETA (igtd + elapsed) never overrides a real TFMS ETA already on the row
+  // (igtd is the filed gate time; once airborne, trackInformation's ETA reflects the actual departure).
+  if (etaFromTraj && existingArr && existingArr.arriveISO && existingArr.etaSrc && existingArr.etaSrc !== 'traj') {
+    eta = existingArr.arriveISO; etaFromTraj = false;
+  }
   // A message about the same aircraft's NEXT leg out of KSFO (orig=KSFO) or a different leg
   // (orig differs from the row's FROM) is not an amendment of the inbound flight. Treating it
   // as one deleted inbound rows (N183QS RJGG→SFO vanished when its SFO→X leg was filed).
@@ -1682,6 +1706,10 @@ function ingestSwimFlightBlock(block, feedLabel) {
         did = true;
       }
     }
+  }
+  if (did && eta) {
+    var rowE = movements.arrivals.get(identAliases.get(key) || key) || movements.arrivals.get(key);
+    if (rowE && rowE.arriveISO === eta) rowE.etaSrc = etaFromTraj ? 'traj' : 'tfms';
   }
   diag(did ? ('board:' + type.toLowerCase()) : ('no-row:' + type.toLowerCase() + (eta || etd ? '' : ':notime')));
   if (did && !eta && airportMatch(dest, AIRPORT_ICAO)) {
