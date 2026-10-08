@@ -45,7 +45,11 @@ function batch(list) {
   console.log('diag blocks', S.swimDiag.blocks, 'payloads', S.swimDiag.payloads, S.swimDiag.homeByDecision);
   const has = id => arr.some(f => [f.ident, f.callsign, f.reg].map(x => String(x || '').replace(/[^A-Z0-9]/gi, '').toUpperCase()).includes(id));
   ['JTL868', 'N883TR', 'N183QS', 'VJT793', 'N938QS'].forEach(id => assert(has(id), 'missing ' + id));
-  assert(!has('UAL123'), 'airline leaked'); assert(!has('N3400C'), 'tomorrow leaked'); assert(!has('N8312H'), 'OAK leaked');
+  assert(!has('UAL123'), 'airline leaked'); assert(!has('N3400C'), 'beyond-window leaked');
+  assert(S.tfmsPlanByAircraft.has('N3400C') || [...S.tfmsPlanByAircraft.keys()].some(k => /N3400C/.test(k)), 'tomorrow plan not stored for later window');
+  { const bw = S.boardWindowInfo(); console.log('window', bw.mode, bw.endPT);
+    S.handleSwimMsg(batch([{ acid: 'N91BN', dep: 'KSNA', arr: 'KSFO', msgType: 'flightPlanInformation', etd: iso(bw.mode === 'until-sunrise' ? (bw.endMs - Date.now()) / 60000 - 100 : 2 * 60), eta: iso(bw.mode === 'until-sunrise' ? (bw.endMs - Date.now()) / 60000 - 30 : 3 * 60), type: 'C56X' }]), 'tfms');
+    const a = await S.buildBoard('arrivals'); assert(a.some(f => f.ident === 'N91BN'), 'in-window next-morning plan not shown'); } assert(!has('N8312H'), 'OAK leaked');
   assert(S.tfmsElsewhereFor(['N8312H']), 'OAK memory');
   // 2b) Next leg out of SFO for N183QS must NOT delete the inbound RJGG row
   S.handleSwimMsg(batch([

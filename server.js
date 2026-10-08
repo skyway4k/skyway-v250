@@ -777,11 +777,77 @@ function endOfDayPTMs(nowMs) {
   }
   return now + 24 * 3600000;
 }
+// Sunrise/sunset at KSFO (NOAA "Almanac for Computers" algorithm, zenith 90.833°, ±1–2 min).
+var SFO_SUN_LAT = 37.6189, SFO_SUN_LON = -122.3750;
+function sunEventUtcMs(ptDate, rising) {
+  // ptDate 'YYYY-MM-DD' (PT calendar day). Returns epoch ms of sunrise/sunset on that PT day.
+  var y = +ptDate.slice(0, 4), mo = +ptDate.slice(5, 7), d = +ptDate.slice(8, 10);
+  var rad = Math.PI / 180;
+  var N = Math.floor((Date.UTC(y, mo - 1, d) - Date.UTC(y, 0, 0)) / 86400000);
+  var lngHour = SFO_SUN_LON / 15;
+  var t = N + (((rising ? 6 : 18) - lngHour) / 24);
+  var M = (0.9856 * t) - 3.289;
+  var L = M + (1.916 * Math.sin(M * rad)) + (0.020 * Math.sin(2 * M * rad)) + 282.634;
+  L = ((L % 360) + 360) % 360;
+  var RA = Math.atan(0.91764 * Math.tan(L * rad)) / rad;
+  RA = ((RA % 360) + 360) % 360;
+  RA = (RA + (Math.floor(L / 90) * 90 - Math.floor(RA / 90) * 90)) / 15;
+  var sinDec = 0.39782 * Math.sin(L * rad);
+  var cosDec = Math.cos(Math.asin(sinDec));
+  var cosH = (Math.cos(90.833 * rad) - (sinDec * Math.sin(SFO_SUN_LAT * rad))) / (cosDec * Math.cos(SFO_SUN_LAT * rad));
+  if (cosH > 1 || cosH < -1) return null;
+  var H = (rising ? 360 - Math.acos(cosH) / rad : Math.acos(cosH) / rad) / 15;
+  var T = H + RA - (0.06571 * t) - 6.622;
+  var UT = (((T - lngHour) % 24) + 24) % 24;
+  var ms = Date.UTC(y, mo - 1, d) + UT * 3600000;
+  // PT local day spans 07/08:00 UTC → next 07/08:00 UTC; a UT before ~08h belongs to the next UTC date.
+  if (UT < 9) ms += 86400000;
+  return Math.round(ms);
+}
+// Plans/rows are STORED out to this horizon regardless of which window is showing; the window
+// below is applied only at display/API time, so a later window never needs a plan we dropped.
+var BOARD_STORE_HORIZON_MS = 36 * 3600000;
+// KSFO board window (America/Los_Angeles, computed sunrise/sunset):
+//   sunrise → sunset : through midnight PT tonight
+//   sunset → midnight: through the next sunrise
+//   midnight → sunrise: no end cutoff (every filed flight we hold, i.e. up to the 36h store horizon)
+function boardWindowInfo(nowMs) {
+  var now = nowMs || Date.now();
+  var day = ptDateStr(now);
+  var eod = endOfDayPTMs(now);
+  var sunrise = sunEventUtcMs(day, true);
+  var sunset = sunEventUtcMs(day, false);
+  var nextSunrise = sunEventUtcMs(ptDateStr(eod + 3600000), true);
+  var mode, label, end;
+  if (sunrise && sunset && now >= sunrise && now < sunset) {
+    mode = 'until-midnight-PT'; label = 'through midnight PT'; end = eod;
+  } else if (sunset && now >= sunset) {
+    mode = 'until-sunrise'; end = nextSunrise || eod;
+    label = 'through sunrise ' + fmtTimeLA(new Date(end).toISOString());
+  } else {
+    mode = 'all-filed'; label = 'all filed flights'; end = null;
+  }
+  function pt(ms) { return ms ? fmtTimeLA(new Date(ms).toISOString()) : ''; }
+  return {
+    mode: mode, label: label,
+    endMs: end, endISO: end ? new Date(end).toISOString() : null,
+    endPT: end ? new Date(end).toLocaleString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) : 'none (all filed, store horizon 36h)',
+    storeHorizonISO: new Date(now + BOARD_STORE_HORIZON_MS).toISOString(),
+    sunriseISO: sunrise ? new Date(sunrise).toISOString() : '', sunsetISO: sunset ? new Date(sunset).toISOString() : '',
+    nextSunriseISO: nextSunrise ? new Date(nextSunrise).toISOString() : '',
+    sunrisePT: pt(sunrise), sunsetPT: pt(sunset), nextSunrisePT: pt(nextSunrise)
+  };
+}
+function boardWindowEndMs(nowMs) {
+  var w = boardWindowInfo(nowMs);
+  return w.endMs || ((nowMs || Date.now()) + BOARD_STORE_HORIZON_MS);
+}
+// Display/API window (sunrise/sunset-aware). Name kept for existing callers.
 function withinPTDayWindow(iso, nowMs) {
   if (!iso) return null;
   var t = new Date(iso).getTime();
   if (!t || isNaN(t)) return null;
-  return t < endOfDayPTMs(nowMs || Date.now());
+  return t < boardWindowEndMs(nowMs || Date.now());
 }
 function isSwimishSource(src) {
   var s = String(src || '');
@@ -990,6 +1056,9 @@ function lookupTfmsPlan(key, board) {
 }
 function pruneTfmsPlansPastMidnight() {
   var eod = endOfDayPTMs(Date.now());
+  var nowP = Date.now();
+  var pastCut = Math.min(eod - 24 * 3600000, nowP - 6 * 3600000); // before today PT (and ≥6h old)
+  var futureCut = Math.max(nowP + BOARD_STORE_HORIZON_MS, boardWindowEndMs(nowP));
   var dropped = 0;
   // Roll landed-drop suppressions from prior PT days
   landedDroppedAt.forEach(function (at, key) {
@@ -1004,8 +1073,8 @@ function pruneTfmsPlansPastMidnight() {
       ['arrivals', 'departures'].forEach(function (b) {
         var p = plan[b];
         var t = planTime(p);
-        // Drop side whose filed time is older than previous PT day's EOD, or beyond tonight's midnight
-        if (t && (t < eod - 24 * 3600000 || t >= eod)) {
+        // Drop side whose filed time is in the past PT day(s) or beyond the storage horizon
+        if (t && (t < pastCut || t >= futureCut)) {
           plan[b] = null;
           dropped++;
         }
@@ -1015,14 +1084,15 @@ function pruneTfmsPlansPastMidnight() {
       return;
     }
     var t = planTime(plan);
-    if (t && (t < eod - 24 * 3600000 || t >= eod)) {
+    if (t && (t < pastCut || t >= futureCut)) {
       tfmsPlanByAircraft.delete(key);
       dropped++;
     }
   });
-  // Drop scheduled SWIM rows whose ETA/ETD is beyond tonight's PT midnight (not yet landed/departed)
+  // Drop scheduled rows only beyond the storage horizon; rows outside the display window are
+  // hidden by buildBoard but kept so the rolling night window can show them later.
   var now = Date.now();
-  var eodNow = endOfDayPTMs(now);
+  var eodNow = futureCut;
   ['arrivals', 'departures'].forEach(function (board) {
     movements[board].forEach(function (f, key) {
       if (!f) return;
@@ -1327,11 +1397,15 @@ function swimBlockLaddBlocked(block) {
   return false;
 }
 
-// True when the filed ISO is still on today's PT board (before tonight's midnight).
+// Ingest/storage gate: keep anything up to the storage horizon (or the display window if that
+// is later). The display window (midnight by day, next sunrise after sunset, none after midnight) is applied in buildBoard,
+// so tomorrow-morning plans filed in the afternoon are already held when night mode needs them.
 function isoWithinTodayPT(iso) {
   if (!iso) return true; // unknown time — keep and let prune decide later
-  var win = withinPTDayWindow(iso, Date.now());
-  return win !== false;
+  var t = new Date(iso).getTime();
+  if (!t || isNaN(t)) return true;
+  var now = Date.now();
+  return t < Math.max(now + BOARD_STORE_HORIZON_MS, boardWindowEndMs(now));
 }
 
 // TFMS "Flight*" messages use 3-letter FAA identifiers for US airports (SMO, SFO). Normalize to
@@ -1557,13 +1631,13 @@ function ingestSwimFlightBlock(block, feedLabel) {
 
 
   if (type === 'ARRIVAL' && airportMatch(dest, AIRPORT_ICAO)) {
-    if (!isoWithinTodayPT(eta || etd)) { diag('after-midnight'); return did; }
+    if (!isoWithinTodayPT(eta || etd)) { diag('beyond-horizon'); return did; }
     swimStats.arrivals++;
     rememberIfKsfo('arrivals');
     upsertMovement('arrivals', key, { ident: ident, callsign: cs || '', reg: tail || '', type: acType || '', from: orig || '', to: dest || AIRPORT_ICAO, filedDest: AIRPORT_ICAO, divertTo: '', divertAirport: '', divertAt: 0, arrived: true, arriveISO: eta || nowISO, arrive: fmtTimeLA(eta || nowISO), source: srcTag, timeSource: 'swim', etaNote: '' });
     did = true;
   } else if (type === 'DEPARTURE' && airportMatch(orig, AIRPORT_ICAO)) {
-    if (!isoWithinTodayPT(etd)) { diag('after-midnight'); return did; }
+    if (!isoWithinTodayPT(etd)) { diag('beyond-horizon'); return did; }
     swimStats.departures++;
     rememberIfKsfo('departures');
     var departurePatch = { ident: ident, callsign: cs || '', reg: tail || '', type: acType || '', from: orig || AIRPORT_ICAO, to: dest || '', departed: true, departISO: etd || nowISO, depart: fmtTimeLA(etd || nowISO), source: srcTag, timeSource: 'swim', etaNote: '' };
@@ -1571,14 +1645,14 @@ function ingestSwimFlightBlock(block, feedLabel) {
     removeLandedArrivalOnDeparture(key, departurePatch);
     did = true;
   } else if (type === 'DEPARTURE' && airportMatch(dest, AIRPORT_ICAO)) {
-    if (!isoWithinTodayPT(eta || etd)) { diag('after-midnight'); return did; }
+    if (!isoWithinTodayPT(eta || etd)) { diag('beyond-horizon'); return did; }
     swimStats.arrivals++;
     rememberIfKsfo('arrivals');
     upsertMovement('arrivals', key, { ident: ident, callsign: cs || '', reg: tail || '', type: acType || '', from: orig || '', to: dest || AIRPORT_ICAO, filedDest: AIRPORT_ICAO, divertTo: '', divertAirport: '', divertAt: 0, arrived: false, departISO: etd || nowISO, depart: fmtTimeLA(etd || nowISO), arriveISO: eta || '', arrive: eta ? fmtTimeLA(eta) : '', source: srcTag, timeSource: 'swim', etaNote: '' });
     did = true;
   } else if (type === 'FLIGHT_PLAN' || type === 'EN_ROUTE' || type === 'UNKNOWN') {
     if (airportMatch(dest, AIRPORT_ICAO)) {
-      if (!isoWithinTodayPT(eta || etd)) diag('after-midnight');
+      if (!isoWithinTodayPT(eta || etd)) diag('beyond-horizon');
       else {
         swimStats.arrivals++;
         rememberIfKsfo('arrivals');
@@ -3191,6 +3265,7 @@ async function buildBoard(kind) {
   });
   // Kick FAA registry fills in background (rate-limited); broadcast when anything new lands
   scheduleFaaBoardEnrichment(kind);
+  lastShownCounts[kind] = list.length;
   return list;
 }
 
@@ -3209,6 +3284,7 @@ function sendJSON(res, status, obj) {
   res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
   res.end(JSON.stringify(obj));
 }
+var lastShownCounts = { arrivals: null, departures: null };
 function boardCounts() {
   function count(m) {
     var c = { total: 0, swim: 0, adsbOnly: 0, other: 0 };
@@ -3221,7 +3297,7 @@ function boardCounts() {
     });
     return c;
   }
-  return { arrivals: count(movements.arrivals), departures: count(movements.departures), tfmsPlans: tfmsPlanByAircraft.size };
+  return { arrivals: count(movements.arrivals), departures: count(movements.departures), tfmsPlans: tfmsPlanByAircraft.size, shown: lastShownCounts };
 }
 function buildStatusPayload() {
   return Object.assign(getCreditSummary(), {
@@ -3234,7 +3310,7 @@ function buildStatusPayload() {
     }),
     adsbPrimary: ADSB_PRIMARY,
     boardMode: SWIM_ENABLED ? 'swim' : 'adsb-live',
-    boardWindow: 'until-midnight-PT',
+    boardWindow: boardWindowInfo(),
     landedHoldMs: LANDED_KEEP_MS,
     idle: { paused: isIdle(), pausesOnly: 'adsb/opensky polling', swimIngestPaused: false, secondsSinceLastClient: Math.round((Date.now() - lastClientSeenAt) / 1000) },
     uptimeSec: Math.round(process.uptime()),
@@ -3474,6 +3550,6 @@ if (process.env.SKYWAY_TEST === '1') {
     buildBoard: buildBoard, isGaBizTraffic: isGaBizTraffic, swimDiag: swimDiag, tfmsPendingUntyped: tfmsPendingUntyped,
     promotePendingTfms: promotePendingTfms, saveSnapshot: saveSnapshot, restoreSnapshot: restoreSnapshot,
     buildSnapshot: buildSnapshot, pruneLandedArrivals: pruneLandedArrivals, pruneStaleAdsbOnly: pruneStaleAdsbOnly,
-    tfmsElsewhereFor: tfmsElsewhereFor, identAliases: identAliases, rehydrateFromPlans: rehydrateFromPlans, toIcaoAirport: toIcaoAirport, runCallsignLookup: runCallsignLookup
+    tfmsElsewhereFor: tfmsElsewhereFor, identAliases: identAliases, boardWindowInfo: boardWindowInfo, sunEventUtcMs: sunEventUtcMs, isoWithinTodayPT: isoWithinTodayPT, pruneTfmsPlansPastMidnight: pruneTfmsPlansPastMidnight, rehydrateFromPlans: rehydrateFromPlans, toIcaoAirport: toIcaoAirport, runCallsignLookup: runCallsignLookup
   };
 }

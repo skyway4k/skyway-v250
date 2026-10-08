@@ -2976,16 +2976,28 @@ function updateBoardTitles(mode){
   if(!at||!dt)return;
   // Lobby/GM set their own titles via applyViewChrome — don't overwrite.
   if(VIEW_MODE==='lobby'||VIEW_MODE==='gm')return;
-  // Schedule boards: through midnight America/Los_Angeles of the current local day.
-  at.textContent='🛬 Scheduled arrivals — through midnight PT';
-  dt.textContent='🛫 Scheduled departures — through midnight PT';
+  // Schedule boards (server decides from computed KSFO sunrise/sunset, America/Los_Angeles):
+  // sunrise→sunset: through midnight PT · sunset→midnight: through next sunrise · midnight→sunrise: all filed.
+  var lbl=boardWindowLabel();
+  at.textContent='🛬 Scheduled arrivals — '+lbl;
+  dt.textContent='🛫 Scheduled departures — '+lbl;
+  var bw=window._boardWindow||{};
+  var span=bw.mode==='until-sunrise'?('sunrise '+(bw.nextSunrisePT||'')+' PT (sunset→midnight rule)'):bw.mode==='all-filed'?('every filed flight (midnight→sunrise: no end cutoff)'):('midnight Pacific (switches to through-sunrise at KSFO sunset '+(bw.sunsetPT||'')+')');
   if(mode==='adsb-live'){
-    at.title='GA/bizjet arrivals filed/estimated through midnight Pacific; on-ground arrivals remain until departure. Live ADS-B fills position/progress when SWIM is quiet.';
-    dt.title='GA/bizjet departures filed/estimated through midnight Pacific. Live ADS-B fills gaps when SWIM is quiet.';
+    at.title='GA/bizjet arrivals filed/estimated through '+span+'; on-ground arrivals remain until departure. Live ADS-B fills position/progress when SWIM is quiet.';
+    dt.title='GA/bizjet departures filed/estimated through '+span+'. Live ADS-B fills gaps when SWIM is quiet.';
   } else {
-    at.title='Filed/estimated arrivals through midnight America/Los_Angeles; landed arrivals remain until departure.';
-    dt.title='Filed/estimated departures through midnight America/Los_Angeles.';
+    at.title='Filed/estimated arrivals through '+span+'; landed arrivals remain until departure.';
+    dt.title='Filed/estimated departures through '+span+'.';
   }
+}
+function boardWindowLabel(){var bw=window._boardWindow;return (bw&&bw.label)?bw.label:'through midnight PT';}
+function boardWindowEndMs(now){
+  now=now||Date.now();
+  var bw=window._boardWindow;
+  if(bw&&bw.mode==='until-sunrise'&&bw.endISO)return Date.parse(bw.endISO);
+  if(bw&&bw.mode==='until-midnight-PT')return endOfDayPTMs(now);
+  return Infinity; // 'all-filed' (or status not loaded yet — the API already applied the window)
 }
 function ptDateStr(ms){
   return new Date(ms).toLocaleDateString('en-CA',{timeZone:'America/Los_Angeles'});
@@ -3010,7 +3022,7 @@ function inBoardDayWindow(iso,now){
   if(!iso)return null; // unknown — caller decides (keep)
   var t=new Date(iso).getTime();
   if(!t||isNaN(t))return null;
-  return t<endOfDayPTMs(now);
+  return t<boardWindowEndMs(now);
 }
 function fetchBoards(){
   console.log('[BOARDS] Fetching arrivals...');
@@ -3043,7 +3055,7 @@ function fetchBoards(){
       }
       // Live ADS-B inbound heuristic: arriveISO is geometric ETA — keep while still inbound.
       if(f.source==='adsb-inbound'||f.source==='adsb'){active.push(f);continue;}
-      // Scheduled window: through midnight America/Los_Angeles (keep if no time).
+      // Scheduled window: server boardWindow (midnight / next sunrise / all filed); keep if no time.
       var win=inBoardDayWindow(f.arriveISO,now);
       if(win===false)continue;
       active.push(f);
@@ -3088,7 +3100,7 @@ function fetchBoards(){
         if(depMs>0&&(nowDep-depMs)<5*60000)completed.push(f);
         continue;
       }
-      // Scheduled window: through midnight PT when a depart time exists.
+      // Scheduled window (server boardWindow) when a depart time exists.
       var winD=inBoardDayWindow(f.departISO,nowDep);
       if(winD===false)continue;
       // Also drop already-past ETD that aren't marked departed (stale schedule).
@@ -3464,6 +3476,7 @@ function updateCreditStatus(){
       }
     }
     window._creditStatus=s;
+    if(s.boardWindow)window._boardWindow=s.boardWindow;
     if(s.boardMode)updateBoardTitles(s.boardMode);
     // Anchor the backoff end to a real timestamp so the local ticker can count down every second.
     // When s.inBackoff flips false, clear the anchor so the HUD swaps back to remaining/budget display.
@@ -3737,7 +3750,7 @@ function connectRampWS(){
         } else if(msg.type==='board'){
           refresh();
         } else if(msg.type==='status'){
-          window._creditStatus=msg.data;if(msg.data.boardMode)updateBoardTitles(msg.data.boardMode);if(typeof msg.data.fuelPricePerGal==='number'&&msg.data.fuelPricePerGal>0){FUEL_PRICE_PER_GAL=msg.data.fuelPricePerGal;if(VIEW_MODE==='gm'){var _fpw=document.getElementById('fuelPricePill');if(_fpw)_fpw.textContent='$'+Number(FUEL_PRICE_PER_GAL).toFixed(2)+'/gal';}}renderCreditHUD();renderSwimHUD(msg.data.swim);renderAdbHUD(msg.data.adb);renderIdleHUD(msg.data.idle);
+          window._creditStatus=msg.data;if(msg.data.boardWindow)window._boardWindow=msg.data.boardWindow;if(msg.data.boardMode)updateBoardTitles(msg.data.boardMode);if(typeof msg.data.fuelPricePerGal==='number'&&msg.data.fuelPricePerGal>0){FUEL_PRICE_PER_GAL=msg.data.fuelPricePerGal;if(VIEW_MODE==='gm'){var _fpw=document.getElementById('fuelPricePill');if(_fpw)_fpw.textContent='$'+Number(FUEL_PRICE_PER_GAL).toFixed(2)+'/gal';}}renderCreditHUD();renderSwimHUD(msg.data.swim);renderAdbHUD(msg.data.adb);renderIdleHUD(msg.data.idle);
         }
       }catch(e){}
     };
@@ -5402,7 +5415,7 @@ function showShiftReport(){
         if(hrs>0&&hrs<=8)exp.push(ar);
       }
       exp.sort(function(a,b){return(a.arriveISO||'').localeCompare(b.arriveISO||'');});
-      if(exp.length===0){document.getElementById('shift-expected').innerHTML='<div style="color:#888;padding:10px;text-align:center;font-style:italic">No expected arrivals through midnight PT</div>';return;}
+      if(exp.length===0){document.getElementById('shift-expected').innerHTML='<div style="color:#888;padding:10px;text-align:center;font-style:italic">No expected arrivals '+boardWindowLabel()+'</div>';return;}
       // Pre-populate spot map with all current ground aircraft so expected arrivals don't collide
       if(!window._globalSpotMap)window._globalSpotMap={};
       // Clear and rebuild from scratch (ground aircraft first)
