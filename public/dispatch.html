@@ -704,26 +704,22 @@ body.view-line-room .empty{color:#94a3b8}
   /* Dispatch + Line room */
   /* Active arrivals: ident op st type from [depart] [arrive] eta spot pax */
   html body:not(.view-lobby):not(.view-gm) .board>.cols.ca,
-  html body:not(.view-lobby):not(.view-gm) #ab .fr{grid-template-columns:minmax(4.9rem,1.2fr) minmax(0,1.15fr) minmax(0,1fr) minmax(3.4rem,.8fr) minmax(0,.6fr) minmax(2.3rem,.5fr)!important}
+  html body:not(.view-lobby):not(.view-gm) #ab .fr,
+  html body:not(.view-lobby):not(.view-gm) #adb .fr{grid-template-columns:minmax(4.9rem,1.2fr) minmax(0,1.15fr) minmax(0,1fr) minmax(3.4rem,.8fr) minmax(0,.6fr) minmax(2.3rem,.5fr)!important}
   html body:not(.view-lobby):not(.view-gm) .board>.cols.ca>span:nth-child(6),
   html body:not(.view-lobby):not(.view-gm) .board>.cols.ca>span:nth-child(7),
   html body:not(.view-lobby):not(.view-gm) #ab .fr>:nth-child(6),
-  html body:not(.view-lobby):not(.view-gm) #ab .fr>:nth-child(7){display:none!important}
+  html body:not(.view-lobby):not(.view-gm) #ab .fr>:nth-child(7),
+  html body:not(.view-lobby):not(.view-gm) #adb .fr>:nth-child(6),
+  html body:not(.view-lobby):not(.view-gm) #adb .fr>:nth-child(7){display:none!important}
   /* Active departures: ident op st type to [depart] etd spot */
   html body:not(.view-lobby):not(.view-gm) .board>.cols.cd,
-  html body:not(.view-lobby):not(.view-gm) #db .fr{grid-template-columns:minmax(4.9rem,1.25fr) minmax(0,1fr) minmax(0,1fr) minmax(3.4rem,.85fr) minmax(0,.8fr)!important}
+  html body:not(.view-lobby):not(.view-gm) #db .fr,
+  html body:not(.view-lobby):not(.view-gm) #ddb .fr{grid-template-columns:minmax(4.9rem,1.25fr) minmax(0,1fr) minmax(0,1fr) minmax(3.4rem,.85fr) minmax(0,.8fr)!important}
   html body:not(.view-lobby):not(.view-gm) .board>.cols.cd>span:nth-child(6),
-  html body:not(.view-lobby):not(.view-gm) #db .fr>:nth-child(6){display:none!important}
-  /* Arrived: ident op st type from [depart] arrive time spot */
-  html body:not(.view-lobby):not(.view-gm) .board>.cols.ca-done,
-  html body:not(.view-lobby):not(.view-gm) #adb .fr{grid-template-columns:minmax(4.9rem,1.25fr) minmax(0,1fr) minmax(0,1fr) minmax(2.9rem,.7fr) minmax(2.9rem,.7fr) minmax(0,.75fr)!important}
-  html body:not(.view-lobby):not(.view-gm) .board>.cols.ca-done>span:nth-child(6),
-  html body:not(.view-lobby):not(.view-gm) #adb .fr>:nth-child(6){display:none!important}
-  /* Departed: ident op st type to [depart] time spot */
-  html body:not(.view-lobby):not(.view-gm) .board>.cols.cd-done,
-  html body:not(.view-lobby):not(.view-gm) #ddb .fr{grid-template-columns:minmax(4.9rem,1.25fr) minmax(0,1fr) minmax(0,1fr) minmax(2.9rem,.75fr) minmax(0,.8fr)!important}
-  html body:not(.view-lobby):not(.view-gm) .board>.cols.cd-done>span:nth-child(6),
+  html body:not(.view-lobby):not(.view-gm) #db .fr>:nth-child(6),
   html body:not(.view-lobby):not(.view-gm) #ddb .fr>:nth-child(6){display:none!important}
+  /* ARRIVED / DEPARTED sections reuse the ARRIVALS / DEPARTURES grids above (#adb / #ddb). */
 
   /* GM: ident op st type route pax [gal] cost vip */
   html body.view-gm .board>.cols.ca,html body.view-gm .board>.cols.cd,
@@ -836,8 +832,8 @@ body.view-line-room .empty{color:#94a3b8}
 <div class="board"><div class="bh"><div class="bt de" id="depTitle">🛫 Scheduled departures — through midnight PT</div><span class="bc" id="dnc">0</span></div><div class="cols cd"><span>Ident</span><span></span><span></span><span>Type</span><span>To</span><span>Depart</span><span>ETD</span><span>Spot</span></div><div class="bb" id="db"></div></div>
 </div>
 <div class="boards done-boards">
-<div class="board"><div class="bh done-hdr" id="ah" style="display:none"><div class="bt ar" style="opacity:.5">✓ Arrived</div><span class="bc" id="adc">0</span></div><div class="cols ca-done" id="ahcols" style="display:none"><span>Ident</span><span></span><span></span><span>Type</span><span>From</span><span>Depart</span><span>Arrive</span><span>Time</span><span>Spot</span></div><div class="bb" id="adb" style="display:none"></div></div>
-<div class="board"><div class="bh done-hdr" id="dh" style="display:none"><div class="bt de" style="opacity:.5">✓ Departed</div><span class="bc" id="ddc">0</span></div><div class="cols cd-done" id="dhcols" style="display:none"><span>Ident</span><span></span><span></span><span>Type</span><span>To</span><span>Depart</span><span>Time</span><span>Spot</span></div><div class="bb" id="ddb" style="display:none"></div></div>
+<div class="board"><div class="bh" id="ah"><div class="bt ar" id="arrdTitle">🛬 Arrived — on ground</div><span class="bc" id="adc">0</span></div><div class="cols ca" id="ahcols"><span>Ident</span><span></span><span></span><span>Type</span><span>From</span><span>Depart</span><span>Arrive</span><span>ETA</span><span>Spot</span><span>PAX</span></div><div class="bb" id="adb"></div></div>
+<div class="board"><div class="bh" id="dh"><div class="bt de" id="depdTitle">🛫 Departed — last 6 hrs</div><span class="bc" id="ddc">0</span></div><div class="cols cd" id="dhcols"><span>Ident</span><span></span><span></span><span>Type</span><span>To</span><span>Depart</span><span>ETD</span><span>Spot</span></div><div class="bb" id="ddb"></div></div>
 </div>
 </body>
 <script>
@@ -1235,8 +1231,8 @@ function applyViewChrome(){
   if(VIEW_MODE==='lobby'){
     if(ca)ca.innerHTML='<span>Ident</span><span>Type</span><span>ETA</span>';
     if(cd)cd.innerHTML='<span>Ident</span><span>Type</span><span>ETD</span>';
-    if(cad)cad.innerHTML='<span>Ident</span><span>Type</span><span>Time</span>';
-    if(cdd)cdd.innerHTML='<span>Ident</span><span>Type</span><span>Time</span>';
+    if(cad)cad.innerHTML='<span>Ident</span><span>Type</span><span>ETA</span>';
+    if(cdd)cdd.innerHTML='<span>Ident</span><span>Type</span><span>ETD</span>';
   } else if(VIEW_MODE==='gm'){
     var gmH='<span>Ident</span><span></span><span></span><span>Type</span><span>From / To</span><span>PAX</span><span>Gal <span class="est-tag">est</span></span><span>Cost <span class="est-tag">est</span></span><span>VIP / Spot</span>';
     if(ca)ca.innerHTML=gmH;
@@ -1256,9 +1252,13 @@ function applyViewChrome(){
   }
   var at=document.getElementById('arrTitle');
   var dt=document.getElementById('depTitle');
+  var adT=document.getElementById('arrdTitle');
+  var ddT=document.getElementById('depdTitle');
   if(VIEW_MODE==='lobby'){
     if(at)at.textContent='🛬 Arrivals';
     if(dt)dt.textContent='🛫 Departures';
+    if(adT)adT.textContent='🛬 Arrived';
+    if(ddT)ddT.textContent='🛫 Departed';
   } else if(VIEW_MODE==='gm'){
     if(at)at.textContent='🛬 GM — arrivals (fuel/cost estimates)';
     if(dt)dt.textContent='🛫 GM — departures (fuel/cost estimates)';
@@ -2689,7 +2689,8 @@ function mkRow(f,cls,done){
     } else if(done&&cls==='de'){
       var agoLd=Math.round((Date.now()-new Date(f.departISO||0).getTime())/60000);
       etaL=agoLd>=0?fmtHM(agoLd):'—';
-    } else if(cls==='ar'&&!done&&(f._landed||(f.arriveISO&&rawEtaL<=0)))etaL='LANDED';
+    } else if(cls==='de'&&f.departed)etaL='OFF '+htmlEsc(f.depart||'');
+    else if(cls==='ar'&&!done&&(f._landed||(f.arriveISO&&rawEtaL<=0)))etaL='LANDED';
     else if(cls==='ar'&&!done&&rawEtaL<=5&&rawEtaL>0)etaL='FINAL';
     else if(rawEtaL>0)etaL=fmtHM(rawEtaL);
     var feL='fe '+(rawEtaL>0&&rawEtaL<=15?'soon':rawEtaL<=60?'mid':'far');
@@ -2744,6 +2745,7 @@ function mkRow(f,cls,done){
     var ago2=Math.round((Date.now()-new Date(f.departISO||0).getTime())/60000);
     etaStr=ago2>=0?'<span style="color:var(--red)">'+fmtHM(ago2)+'</span>':'—';
   }
+  else if(cls==='de'&&f.departed)etaStr='<span style="color:var(--red);font-weight:700" title="Departed (wheels off)">OFF</span>';
   else if(cls==='ar'&&!done&&f._landed)etaStr='<span class="arr-eta" data-tail="'+htmlEsc((f.ident||'').toUpperCase())+'" data-callsign="'+htmlEsc((f.callsign||'').toUpperCase())+'" style="color:var(--green);font-weight:700">LANDED</span>';
   else if(cls==='ar'&&!done&&rawEta<=5&&rawEta>0)etaStr='<span class="arr-eta" data-tail="'+htmlEsc((f.ident||'').toUpperCase())+'" data-callsign="'+htmlEsc((f.callsign||'').toUpperCase())+'" style="color:var(--amber);font-weight:700">FINAL</span>';
   else if(cls==='ar'&&!done&&f.arriveISO&&rawEta<=0)etaStr='<span class="arr-eta" data-tail="'+htmlEsc((f.ident||'').toUpperCase())+'" data-callsign="'+htmlEsc((f.callsign||'').toUpperCase())+'" style="color:var(--green);font-weight:700">LANDED</span>';
@@ -3048,9 +3050,10 @@ function fetchBoards(){
       var minsSinceArr=arrTime>0?Math.round((now-arrTime)/60000):-999;
       // Keep all on-ground arrivals in the arrivals column until a matching
       // departure is observed; there is no five-minute landed timeout.
-      if(f.arrived||(arrTime>0&&minsSinceArr>=0)){
+      if(f.arrived||f.onGround||(arrTime>0&&minsSinceArr>=0)){
+        // Landed → ARRIVED section; stays until a matching departure is observed (server rule).
         f._landed=true;
-        if(!f.departed)active.push(f);
+        if(!f.departed)completed.push(f);
         continue;
       }
       // Live ADS-B inbound heuristic: arriveISO is geometric ETA — keep while still inbound.
@@ -3061,8 +3064,9 @@ function fetchBoards(){
       active.push(f);
     }
     // Sort active: soonest arrival first
-    active.sort(function(a,b){return(a.arriveISO||'').localeCompare(b.arriveISO||'');});
-    // Sort completed: most recent first
+    // Rows without a TFMS ETA yet sort by filed departure time instead of jumping to the top.
+    active.sort(function(a,b){return(a.arriveISO||a.departISO||'~').localeCompare(b.arriveISO||b.departISO||'~');});
+    // Sort ARRIVED: most recent landing first
     completed.sort(function(a,b){return(b.arriveISO||'').localeCompare(a.arriveISO||'');});
     if(active.length>0){
       var h='';
@@ -3070,13 +3074,13 @@ function fetchBoards(){
       ab.innerHTML=h;
       document.getElementById('anc').textContent=active.length;if(window.twemoji)twemoji.parse(ab);
     }else{ab.innerHTML='<div class="empty">No inbound GA</div>';document.getElementById('anc').textContent='0';}
+    // ARRIVED section: same row/column layout as ARRIVALS (spot + PAX stay editable on the ramp).
     if(completed.length>0){
-      ah.style.display='';adb.style.display='';
-      var ahc=document.getElementById('ahcols');if(ahc)ahc.style.display='';
       var h='';
-      for(var i=0;i<Math.min(completed.length,20);i++){h+=mkRow(completed[i],'ar',true);}
-      adb.innerHTML=h;document.getElementById('adc').textContent=completed.length;if(window.twemoji)twemoji.parse(adb);
-    }else{ah.style.display='none';adb.style.display='none';var ahc=document.getElementById('ahcols');if(ahc)ahc.style.display='none';}
+      for(var i=0;i<completed.length;i++){h+=mkRow(completed[i],'ar',false);}
+      adb.innerHTML=h;if(window.twemoji)twemoji.parse(adb);
+    }else{adb.innerHTML='<div class="empty">None on the ground</div>';}
+    document.getElementById('adc').textContent=completed.length;
   }).catch(function(e){console.warn('FA arr:',e);});
 
   fetch('/api/departures').then(function(r){return r.json();}).then(function(dep){
@@ -3095,9 +3099,9 @@ function fetchBoards(){
     if(dep)for(var i=0;i<dep.length;i++){
       var f=dep[i];
       if(f.departed){
-        // Keep recently departed briefly on the completed strip (5 min), then drop.
+        // DEPARTED section: keep for 6 h after wheels-off (matches the server snapshot rule).
         var depMs=f.departISO?new Date(f.departISO).getTime():0;
-        if(depMs>0&&(nowDep-depMs)<5*60000)completed.push(f);
+        if(depMs>0&&(nowDep-depMs)<6*3600000)completed.push(f);
         continue;
       }
       // Scheduled window (server boardWindow) when a depart time exists.
@@ -3120,12 +3124,13 @@ function fetchBoards(){
       db.innerHTML=h;
       document.getElementById('dnc').textContent=active.length;
     }else{db.innerHTML='<div class="empty">No outbound GA</div>';document.getElementById('dnc').textContent='0';}
+    // DEPARTED section: same row/column layout as DEPARTURES.
     if(completed.length>0){
-      dh.style.display='';ddb.style.display='';
-      var dhc=document.getElementById('dhcols');if(dhc)dhc.style.display='';
       var h='';
-      for(var i=0;i<Math.min(completed.length,20);i++){h+=mkRow(completed[i],'de',true);}
-      ddb.innerHTML=h;document.getElementById('ddc').textContent=completed.length;if(window.twemoji)twemoji.parse(ddb);
+      for(var i=0;i<Math.min(completed.length,40);i++){h+=mkRow(completed[i],'de',false);}
+      ddb.innerHTML=h;if(window.twemoji)twemoji.parse(ddb);
+    }else{ddb.innerHTML='<div class="empty">None departed in the last 6 hrs</div>';}
+    document.getElementById('ddc').textContent=completed.length;
     // Build tail -> next departure ISO map for QT detection
     window._depByTail={};
     if(dep)for(var di=0;di<dep.length;di++){
@@ -3135,7 +3140,6 @@ function fetchBoards(){
         if(!window._depByTail[tk]||df.departISO<window._depByTail[tk])window._depByTail[tk]=df.departISO;
       }
     }
-    }else{dh.style.display='none';ddb.style.display='none';var dhc=document.getElementById('dhcols');if(dhc)dhc.style.display='none';}
   }).catch(function(e){console.warn('FA dep:',e);});
   setTimeout(drawHUD,500);
   setTimeout(drawChart,600);
