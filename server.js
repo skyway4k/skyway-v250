@@ -123,6 +123,11 @@ async function initSchema() {
       units INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (source, period_key)
     );
+    CREATE TABLE IF NOT EXISTS board_snapshot (
+      id TEXT PRIMARY KEY,
+      data JSONB NOT NULL,
+      saved_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
     CREATE TABLE IF NOT EXISTS faa_registry_cache (
       n_number TEXT PRIMARY KEY,
       icao_type TEXT,
@@ -134,6 +139,108 @@ async function initSchema() {
     );
   `);
   log('Postgres schema ready', 'OK');
+}
+// ============================================================================================
+// BOARD SNAPSHOT — TFMS plans + movements boards survive restarts, redeploys and Render free-tier
+// spin-down by living in the existing (free) Postgres. SWIM only sends a flight plan when it is
+// filed/amended, so without this every cold start wiped every plan filed before it.
+// NOTE: nothing is ingested while the instance is asleep; plans filed during sleep are only
+// recovered if the SWIM queue spooled them (see /api/swim-diag lag numbers).
+// ============================================================================================
+var persistDirty = false;
+var persistStatus = { store: 'postgres:board_snapshot', lastSaveAt: 0, lastSaveBytes: 0, saves: 0, lastError: '', restoredAt: 0, restored: null };
+var ON_GROUND_MAX_AGE_MS = 36 * 3600000;
+function isAdsbOnlyRow(f) {
+  return f && isAdsbBoardSource(f.source) && !isSwimishSource(f.source) && f.timeSource !== 'swim';
+}
+function buildSnapshot() {
+  var arr = [], dep = [], plans = [], keep = new Set();
+  movements.arrivals.forEach(function (f, k) {
+    if (!f) return;
+    if (isAdsbOnlyRow(f) && !f.arrived && !f.onGround) return; // live geometry only — never persist
+    arr.push([k, f]); keep.add(k);
+  });
+  movements.departures.forEach(function (f, k) {
+    if (!f || isAdsbOnlyRow(f)) return;
+    dep.push([k, f]); keep.add(k);
+  });
+  tfmsPlanByAircraft.forEach(function (v, k) { plans.push([k, v]); keep.add(k); });
+  var aliases = [];
+  identAliases.forEach(function (canon, alias) { if (keep.has(canon)) aliases.push([alias, canon]); });
+  var types = [];
+  tfmsTypeByAcid.forEach(function (v, k) { types.push([k, v]); });
+  if (types.length > 3000) types = types.slice(types.length - 3000);
+  return { v: 1, airport: AIRPORT_ICAO, savedAt: Date.now(), arrivals: arr, departures: dep, plans: plans, aliases: aliases, types: types, ground: groundCache };
+}
+async function saveSnapshot(reason) {
+  var body = JSON.stringify(buildSnapshot());
+  try {
+    await pool.query('INSERT INTO board_snapshot (id, data, saved_at) VALUES ($1, $2::jsonb, now()) ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, saved_at = now()', [AIRPORT_ICAO, body]);
+    persistStatus.lastSaveAt = Date.now();
+    persistStatus.lastSaveBytes = body.length;
+    persistStatus.saves++;
+    persistStatus.lastError = '';
+    persistDirty = false;
+    if (reason && reason !== 'interval') log('[SNAPSHOT] saved (' + reason + ') ' + body.length + ' bytes', 'OK');
+  } catch (e) {
+    persistStatus.lastError = e.message;
+    log('[SNAPSHOT] save failed: ' + e.message, 'WARN');
+  }
+}
+async function restoreSnapshot() {
+  try {
+    var r = await pool.query('SELECT data, saved_at FROM board_snapshot WHERE id = $1', [AIRPORT_ICAO]);
+    if (!r.rows.length) { persistStatus.restored = { found: false }; log('[SNAPSHOT] none stored yet', 'INFO'); return; }
+    var snap = r.rows[0].data || {};
+    var now = Date.now();
+    (snap.aliases || []).forEach(function (p) { if (!identAliases.has(p[0])) identAliases.set(p[0], p[1]); });
+    (snap.types || []).forEach(function (p) { if (!tfmsTypeByAcid.has(p[0])) tfmsTypeByAcid.set(p[0], p[1]); });
+    (snap.plans || []).forEach(function (p) { if (!tfmsPlanByAircraft.has(p[0])) tfmsPlanByAircraft.set(p[0], p[1]); });
+    var nA = 0, nD = 0, skipped = 0;
+    (snap.arrivals || []).forEach(function (p) {
+      var f = p[1];
+      if (!f || movements.arrivals.has(p[0])) return;
+      if (f.arrived || f.onGround) {
+        var landedMs = f.landedAt || Date.parse(f.arriveISO || '') || 0;
+        if (!landedMs || now - landedMs > ON_GROUND_MAX_AGE_MS) { skipped++; return; }
+      }
+      // Restored rows have no live ADS-B yet — strip stale geometry.
+      delete f.etaMin; delete f.distNm; delete f.alt; delete f.gs; f.adsbProgress = false;
+      movements.arrivals.set(p[0], f); nA++;
+    });
+    (snap.departures || []).forEach(function (p) {
+      var f = p[1];
+      if (!f || movements.departures.has(p[0])) return;
+      var dms = Date.parse(f.departISO || '') || 0;
+      if (f.departed && (!dms || now - dms > 6 * 3600000)) { skipped++; return; }
+      delete f.distNm; delete f.alt; delete f.gs; f.adsbProgress = false;
+      movements.departures.set(p[0], f); nD++;
+    });
+    if (snap.ground && typeof snap.ground === 'object') {
+      Object.keys(snap.ground).forEach(function (k) { if (!groundCache[k]) groundCache[k] = snap.ground[k]; });
+    }
+    pruneTfmsPlansPastMidnight();
+    persistStatus.restoredAt = now;
+    persistStatus.restored = { found: true, savedAt: r.rows[0].saved_at, ageSec: Math.round((now - new Date(r.rows[0].saved_at).getTime()) / 1000), arrivals: nA, departures: nD, plans: (snap.plans || []).length, skipped: skipped };
+    log('[SNAPSHOT] restored arrivals=' + nA + ' departures=' + nD + ' plans=' + (snap.plans || []).length + ' (saved ' + persistStatus.restored.ageSec + 's ago, skipped ' + skipped + ' stale)', 'OK');
+  } catch (e) {
+    persistStatus.lastError = 'restore: ' + e.message;
+    log('[SNAPSHOT] restore failed: ' + e.message, 'WARN');
+  }
+}
+function pruneOldOnGround() {
+  var now = Date.now(), changed = false;
+  movements.arrivals.forEach(function (f, k) {
+    if (!f || !(f.arrived || f.onGround)) return;
+    var landedMs = f.landedAt || Date.parse(f.arriveISO || '') || 0;
+    if (landedMs && now - landedMs > ON_GROUND_MAX_AGE_MS) { movements.arrivals.delete(k); delete groundCache[k]; changed = true; }
+  });
+  movements.departures.forEach(function (f, k) {
+    if (!f || !f.departed) return;
+    var dms = Date.parse(f.departISO || '') || 0;
+    if (dms && now - dms > 12 * 3600000) { movements.departures.delete(k); changed = true; }
+  });
+  return changed;
 }
 function monthKey(d = new Date()) { return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0'); }
 function dayKey(d = new Date()) { return d.toISOString().slice(0, 10); }
@@ -436,6 +543,8 @@ function buildAdsbPayload(list) {
       alt_baro: ac.alt_baro,
       gs: ac.gs,
       track: ac.track,
+      baro_rate: ac.baro_rate,
+      geom_rate: ac.geom_rate,
       dst: ac.dst,
       dir: ac.dir,
       r: ac.r || null,
@@ -609,6 +718,9 @@ async function handleAdsbStates(query, res) {
 // ============================================================================================
 var AIRLINE_CS = new Set(('UAL AAL DAL SWA ASA JBU NKS FFT SKW EDV RPA ASH ENY QXE HAL CPA BAW AFR DLH UAE CSG CCA CES CSN CHH CES FDX UPS GTI ATN ABX GTI VRD SCX WOA UAL CKS MPO JSX').split(/\s+/));
 var FRAC_CS = /^(EJA|EJM|LXJ|TWY|JTL|XOJ|OPT|JRE|GTT|DPJ|VJT|GAJ|HRT|TIV|LNJ|CVC|CRE|QQE)/;
+// Small/mid/large-cabin bizjets, turboprops and piston GA. Large-cabin Gulfstream/Global
+// (GLF4/5/6, GL5T/GL7T/GL8T, GLEX) are in because FlightAware's KSFO GA list carries them.
+var GA_BIZ_TYPE_RE = /^(C25|C500|C501|C510|C525|C526|C550|C551|C560|C56X|C650|C680|C68A|C700|C750|CL30|CL35|CL60|GLF|GLEX|GL5T|GL7T|GL8T|G150|G200|G280|GALX|ASTR|WW24|GA[45678]C|LJ|EA50|E50P|E55P|E545|E550|E35L|BE40|PRM1|HA4T|FA10|FA20|FA50|FA6X|FA7X|FA8X|F900|F2TH|H25|HDJT|SF50|PC12|PC24|TBM|BE20|BE30|B350|BE9L|BE9T|BE35|BE36|BE58|BE55|BE76|C172|C182|C206|C208|C210|C152|C150|C162|C177|C180|C185|C195|C240|C310|C340|C414|C421|C82R|P28|P32|P46|PA2|PA3|PA4|PA46|M20|SR2|S22T|DA4|DA6|RV|P210|PC6|KODI|EPIC|EVOT|E300|M600|M500|PAY)/;
 function isGaBizTraffic(flight, reg, typeCode) {
   var cs = String(flight || '').trim().toUpperCase();
   var r = String(reg || '').trim().toUpperCase();
@@ -626,7 +738,7 @@ function isGaBizTraffic(flight, reg, typeCode) {
     // N-reg with empty/own callsign — GA/biz default OK unless type is airliner (handled above)
     return true;
   }
-  if (/^(C25|C25A|C25B|C25C|C500|C510|C525|C550|C560|C56X|C680|C68A|C700|C750|CL30|CL35|CL60|GLF|GLEX|GA[45678]C|LJ|EA50|E50P|E55P|PC12|PC24|TBM|BE20|B350|BE9L|C172|C182|C206|C208|C210|P28|PA46|SR2|DA4|DA6|H25|FA5|FA7|FA8|F2TH|HDJT|SF50)/.test(t)) return true;
+  if (GA_BIZ_TYPE_RE.test(t)) return true;
   return false;
 }
 
@@ -838,6 +950,7 @@ function rememberTfmsPlan(key, fields) {
   next.rememberedAt = Date.now();
   bag[board] = next;
   tfmsPlanByAircraft.set(key, bag);
+  persistDirty = true;
   // Mirror under every alias that points here
   identAliases.forEach(function (canon, alias) {
     if (canon === key && alias !== key) {
@@ -978,16 +1091,31 @@ function connectSWIM() {
       broadcast({ type: 'status', data: buildStatusPayload() });
       attachConsumer(sess, queueName, feedLabel);
     });
+    // SWIM ingest is never paused (idle or not). If Solace gives up after its own retries,
+    // open a fresh session instead of silently staying disconnected until the next deploy.
+    var retryScheduled = false;
+    function scheduleFreshSession(why, delayMs) {
+      if (retryScheduled) return;
+      retryScheduled = true;
+      swimStats.reconnects = (swimStats.reconnects || 0) + 1;
+      log('SWIM ' + feedLabel + ' ' + why + ' — new session in ' + Math.round(delayMs / 1000) + 's', 'WARN');
+      setTimeout(function () {
+        try { sess.dispose(); } catch (e) { }
+        openSession(url, vpn, queueName, feedLabel);
+      }, delayMs);
+    }
     sess.on(solace.SessionEventCode.CONNECT_FAILED_ERROR, function (e) {
       if (swimStats.feeds[feedLabel]) swimStats.feeds[feedLabel].connected = false;
       swimStats.reason = (e && e.infoStr) || 'connect failed';
       log('SWIM ' + feedLabel + ' connect failed: ' + swimStats.reason, 'ERR');
       broadcast({ type: 'status', data: buildStatusPayload() });
+      scheduleFreshSession('connect failed', 60000);
     });
     sess.on(solace.SessionEventCode.DISCONNECTED, function () {
       if (swimStats.feeds[feedLabel]) swimStats.feeds[feedLabel].connected = false;
       swimStats.connected = !!(swimStats.feeds.tfms.connected || swimStats.feeds.sfdps.connected);
       log('SWIM ' + feedLabel + ' disconnected', 'WARN');
+      if (!shuttingDown) scheduleFreshSession('disconnected', 30000);
     });
     sess.on(solace.SessionEventCode.RECONNECTED_NOTICE, function () {
       if (swimStats.feeds[feedLabel]) swimStats.feeds[feedLabel].connected = true;
@@ -1012,7 +1140,9 @@ function xval(xml) {
     var tag = arguments[i];
     var re = new RegExp('<[^>]*?' + tag + '[^>]*?>\\s*([^<]+)', 'is');
     var m = xml.match(re);
-    if (m && m[1] && m[1].trim().length < 200) return m[1].trim();
+    // Skip whitespace-only captures (container elements) instead of returning '' — the
+    // old early return hid every later fallback tag.
+    if (m && m[1] && m[1].trim() && m[1].trim().length < 200) return m[1].trim();
   }
   return null;
 }
@@ -1098,8 +1228,10 @@ function swimPayload(message) {
 function swimFlightBlocks(payload) {
   var blocks = [];
   var patterns = [
-    /<fdm:fltdMessage\b[\s\S]*?<\/fdm:fltdMessage>/gi,
-    /<nxcm:fltdMessage\b[\s\S]*?<\/nxcm:fltdMessage>/gi,
+    // Namespace-prefix agnostic: TFMS R14 batches many fltdMessage per Solace message, and the
+    // prefix is not guaranteed to be fdm:. If the split fails the whole batch was parsed as one
+    // flight (only the first acid/arrArpt ever read).
+    /<(?:[A-Za-z0-9_]+:)?fltdMessage\b[\s\S]*?<\/(?:[A-Za-z0-9_]+:)?fltdMessage>/gi,
     /<flight\b[^>]*xmlns[\s\S]*?<\/flight>/gi,
     /<fx:Flight\b[\s\S]*?<\/fx:Flight>/gi,
     /<FbmsFlight\b[\s\S]*?<\/FbmsFlight>/gi
@@ -1112,11 +1244,69 @@ function swimFlightBlocks(payload) {
   if (!blocks.length) blocks.push(payload);
   return blocks;
 }
+// ------------------------------------------------------------------------------------------
+// SWIM diagnostics — no credentials, only parsed flight fields for KSFO-touching blocks, so we
+// can prove what TFMS actually delivers (message types, batch sizes, feed lag, drop reasons).
+// ------------------------------------------------------------------------------------------
+var swimDiag = {
+  since: Date.now(), payloads: 0, blocks: 0, maxBlocksPerPayload: 0,
+  msgTypes: {}, homeBlocks: 0, homeByDecision: {}, lastLagSec: null, maxLagSec: 0,
+  recent: [] // ring buffer of KSFO-touching blocks
+};
+function swimDiagNote(entry) {
+  swimDiag.homeBlocks++;
+  swimDiag.homeByDecision[entry.decision] = (swimDiag.homeByDecision[entry.decision] || 0) + 1;
+  swimDiag.recent.push(entry);
+  if (swimDiag.recent.length > 150) swimDiag.recent.splice(0, swimDiag.recent.length - 150);
+}
+// acid/tail → ICAO type learned from any TFMS message that carried one (flightPlanInformation,
+// departureInformation, flightModify…). trackInformation (1/min) carries no type at all.
+var tfmsTypeByAcid = new Map();
+function rememberTfmsType(ids, t) {
+  if (!t) return;
+  ids.forEach(function (id) { var k = normIdent(id); if (k) tfmsTypeByAcid.set(k, { type: t, at: Date.now() }); });
+  if (tfmsTypeByAcid.size > 6000) {
+    var drop = tfmsTypeByAcid.size - 5000, i = 0;
+    for (var k of tfmsTypeByAcid.keys()) { if (i++ >= drop) break; tfmsTypeByAcid.delete(k); }
+  }
+}
+function cachedTfmsType(ids) {
+  for (var i = 0; i < ids.length; i++) {
+    var e = tfmsTypeByAcid.get(normIdent(ids[i]));
+    if (e && e.type) return e.type;
+  }
+  return '';
+}
+// KSFO-touching TFMS flights with an unknown operator callsign and no type yet (e.g. KOW883):
+// held off the board until a type arrives (later TFMS message or ADS-B `t`), then re-ingested.
+var tfmsPendingUntyped = new Map();
+// Positive evidence that an aircraft is going somewhere else in the Bay (OAK/SJC/PAO/SQL/…):
+// lets the ADS-B classifier reject it even when its geometry looks vaguely SFO-bound.
+var BAY_AIRPORTS = new Set(['KOAK', 'KSJC', 'KPAO', 'KSQL', 'KHWD', 'KHAF', 'KNUQ', 'KLVK', 'KCCR', 'KSTS', 'KAPC', 'KDVO', 'KO69', 'KRHV', 'KE16', 'KMRY', 'KWVI', 'KSMF', 'KSAC', 'KTCY', 'KSCK', 'KMOD', 'KC83', 'KLHM', 'KSUU', 'KVCB']);
+var tfmsElsewhere = new Map(); // normIdent → { dest, at }
+function noteTfmsElsewhere(ids, dest) {
+  var d = normAirport(dest); if (d.length === 3) d = 'K' + d;
+  ids.forEach(function (id) { var k = normIdent(id); if (k) tfmsElsewhere.set(k, { dest: d, at: Date.now() }); });
+  if (tfmsElsewhere.size > 8000) {
+    var drop = tfmsElsewhere.size - 6000, i = 0;
+    for (var k of tfmsElsewhere.keys()) { if (i++ >= drop) break; tfmsElsewhere.delete(k); }
+  }
+}
+function tfmsElsewhereFor(ids) {
+  for (var i = 0; i < ids.length; i++) {
+    var e = tfmsElsewhere.get(normIdent(ids[i]));
+    if (e && (Date.now() - e.at) < 12 * 3600000) return e;
+  }
+  return null;
+}
 function handleSwimMsg(message, feedLabel) {
   swimStats.msgs++;
   var payload = swimPayload(message);
   if (!payload) return;
   var blocks = swimFlightBlocks(payload);
+  swimDiag.payloads++;
+  swimDiag.blocks += blocks.length;
+  if (blocks.length > swimDiag.maxBlocksPerPayload) swimDiag.maxBlocksPerPayload = blocks.length;
   var changed = false;
   for (var bi = 0; bi < blocks.length; bi++) {
     if (ingestSwimFlightBlock(blocks[bi], feedLabel || 'tfms')) changed = true;
@@ -1150,15 +1340,24 @@ function ingestSwimFlightBlock(block, feedLabel) {
   var orig = xmlAttr(block, 'depArpt') || xval(block, 'departurePoint[\\s\\S]*?airport', 'departureAirport', 'departureAerodrome.*?locationIndicator', 'originAirport', 'departureAerodrome', 'dep');
   var dest = xmlAttr(block, 'arrArpt') || xval(block, 'arrivalPoint[\\s\\S]*?airport', 'arrivalAirport', 'destinationAerodrome.*?locationIndicator', 'destinationAirport', 'destinationAerodrome', 'arr');
   var acType = normalizeIcaoType(
-    xval(block, 'aircraftSpecification', 'aircraftType', 'typeDesignator', 'icaoAircraftType') ||
+    // TFMS R14: flightAircraftSpecs (FLIGHT_PLAN_INFORMATION/FLIGHT_CREATE/…),
+    // newFlightAircraftSpecs (amendments), flightStatusAndSpec.aircraftspecification.
+    xval(block, 'flightAircraftSpecs', 'newFlightAircraftSpecs', 'aircraftSpecification', 'aircraftType', 'typeDesignator', 'icaoAircraftType') ||
     xmlAttr(block, 'aircraftSpecification') || xmlAttr(block, 'aircraftType') || xmlAttr(block, 'acType') || xmlAttr(block, 'equipment')
   );
   var tail = xval(block, 'registration', 'aircraftRegistration', 'tailNumber', 'aircraftRegistrationMark');
+  // ICAO-format plans carry the registration in field-18 remarks: "REG/N883TR".
+  if (!tail) {
+    var regRemark = block.match(/\bREG\/([A-Z0-9-]{3,8})\b/);
+    if (regRemark) tail = regRemark[1];
+  }
   // Fractional operators often omit reg in TFMS; infer common NetJets/Flexjet N-numbers for merge + FAA.
   if (!tail && cs) {
     var inferredTail = inferFracNReg(cs);
     if (inferredTail) tail = inferredTail;
   }
+  if (acType) rememberTfmsType([cs, tail], acType);
+  else acType = cachedTfmsType([cs, tail]);
   var depFixOpen = (block.match(/<nxcm:departureFixAndTime\b[^>]*>/i) || [])[0] || '';
   var arrFixOpen = (block.match(/<nxcm:arrivalFixAndTime\b[^>]*>/i) || [])[0] || '';
   var etaAttrBlock = (block.match(/<nxcm:eta\b[^>]*>/i) || [])[0] || '';
@@ -1175,7 +1374,20 @@ function ingestSwimFlightBlock(block, feedLabel) {
     xmlAttr(block, 'arrivalTime') ||
     xval(block, 'earliestRunwayArrivalTime', 'estimatedArrivalTime', 'ETA', 'arrivalDateTime', 'gateArrivalTime', 'estimatedTimeOfArrival', 'actualLandingTime', 'arrivalTime', 'estimatedLandingTime')
   );
-  var msgType = (xmlAttr(block, 'msgType') || '').toLowerCase();
+  var msgTypeRaw = xmlAttr(block, 'msgType') || '';
+  var msgType = msgTypeRaw.toLowerCase();
+  swimDiag.msgTypes[msgTypeRaw || '(none)'] = (swimDiag.msgTypes[msgTypeRaw || '(none)'] || 0) + 1;
+  var srcTs = parseIsoLoose(xmlAttr(block, 'sourceTimeStamp'));
+  if (srcTs) {
+    var lag = Math.round((Date.now() - Date.parse(srcTs)) / 1000);
+    swimDiag.lastLagSec = lag;
+    if (lag > swimDiag.maxLagSec) swimDiag.maxLagSec = lag;
+  }
+  var homeTouch = airportMatch(orig, AIRPORT_ICAO) || airportMatch(dest, AIRPORT_ICAO);
+  function diag(decision) {
+    if (!homeTouch) return;
+    swimDiagNote({ at: new Date().toISOString(), msgType: msgTypeRaw, acid: cs || '', tail: tail || '', type: acType || '', orig: orig || '', dest: dest || '', eta: eta || '', etd: etd || '', src: srcTs || '', decision: decision });
+  }
   var type = 'UNKNOWN';
   if (block.indexOf('DepartureInformation') >= 0 || block.indexOf('flightDeparture') >= 0 ||
       block.indexOf('actualDeparture') >= 0 || msgType.indexOf('depart') >= 0) type = 'DEPARTURE';
@@ -1190,10 +1402,26 @@ function ingestSwimFlightBlock(block, feedLabel) {
       (feedLabel === 'sfdps')) type = 'FLIGHT_PLAN';
 
   if (!cs && !tail) return false;
-  if (isLaddBlocked(tail, cs) || swimBlockLaddBlocked(block)) return false;
+  if (isLaddBlocked(tail, cs) || swimBlockLaddBlocked(block)) { diag('ladd-blocked'); return false; }
+
+  // Remember Bay-area destinations for ADS-B false-positive rejection (cheap; GA-ish only).
+  var destN = normAirport(dest); if (destN.length === 3) destN = 'K' + destN;
+  if (destN && !airportMatch(dest, AIRPORT_ICAO) && BAY_AIRPORTS.has(destN)) noteTfmsElsewhere([cs, tail], destN);
 
   // KSFO GA board: GA / fractional / bizjet only — drop airline callsigns and airliner types
-  if (!isGaBizTraffic(cs || '', tail || '', acType || '')) return false;
+  if (!isGaBizTraffic(cs || '', tail || '', acType || '')) {
+    var csU = String(cs || '').toUpperCase();
+    if (homeTouch && !acType && /^[A-Z]{3}\d/.test(csU) && !AIRLINE_CS.has(csU.substring(0, 3))) {
+      // Unknown operator, no type yet (trackInformation never carries one). Hold, don't show.
+      tfmsPendingUntyped.set(normIdent(cs), { block: block, feedLabel: feedLabel, at: Date.now() });
+      if (tfmsPendingUntyped.size > 400) tfmsPendingUntyped.delete(tfmsPendingUntyped.keys().next().value);
+      diag('held-untyped');
+    } else {
+      diag('not-ga:' + (acType || 'notype'));
+    }
+    return false;
+  }
+  if (cs) tfmsPendingUntyped.delete(normIdent(cs));
 
   var key = resolveBoardKey(tail, cs, null);
   if (!key) return false;
@@ -1212,6 +1440,15 @@ function ingestSwimFlightBlock(block, feedLabel) {
   var existingArr = movements.arrivals.get(key);
   var touchesHome = airportMatch(orig, AIRPORT_ICAO) || airportMatch(dest, AIRPORT_ICAO);
 
+  // A row that only ever came from ADS-B geometry was never filed to KSFO: TFMS now says it is
+  // going elsewhere, so drop it (no DIVERT badge — it was a false positive, not a diversion).
+  if (existingArr && dest && !airportMatch(dest, AIRPORT_ICAO) && !existingArr.arrived && !existingArr.onGround
+      && !isSwimishSource(existingArr.source) && existingArr.timeSource !== 'swim' && !lookupTfmsPlan(key, 'arrivals')) {
+    movements.arrivals.delete(key);
+    noteTfmsElsewhere([cs, tail, key], dest);
+    diag('adsb-row-dropped:dest=' + dest);
+    return true;
+  }
   // TFMS amend / arrival dest change: was on the KSFO arrivals board, now filed to KOAK or KSJC.
   if (divertLbl && existingArr && !existingArr.arrived && !airportMatch(dest, AIRPORT_ICAO)
       && !(type === 'DEPARTURE' && airportMatch(orig, AIRPORT_ICAO))) {
@@ -1235,6 +1472,7 @@ function ingestSwimFlightBlock(block, feedLabel) {
       source: 'swim-divert',
       timeSource: 'swim'
     });
+    diag('divert:' + divertLbl);
     return true;
   }
 
@@ -1259,13 +1497,13 @@ function ingestSwimFlightBlock(block, feedLabel) {
   }
 
   if (type === 'ARRIVAL' && airportMatch(dest, AIRPORT_ICAO)) {
-    if (!isoWithinTodayPT(eta || etd)) return did;
+    if (!isoWithinTodayPT(eta || etd)) { diag('after-midnight'); return did; }
     swimStats.arrivals++;
     rememberIfKsfo('arrivals');
     upsertMovement('arrivals', key, { ident: ident, callsign: cs || '', reg: tail || '', type: acType || '', from: orig || '', to: dest || AIRPORT_ICAO, filedDest: AIRPORT_ICAO, divertTo: '', divertAirport: '', divertAt: 0, arrived: true, arriveISO: eta || nowISO, arrive: fmtTimeLA(eta || nowISO), source: srcTag, timeSource: 'swim', etaNote: '' });
     did = true;
   } else if (type === 'DEPARTURE' && airportMatch(orig, AIRPORT_ICAO)) {
-    if (!isoWithinTodayPT(etd)) return did;
+    if (!isoWithinTodayPT(etd)) { diag('after-midnight'); return did; }
     swimStats.departures++;
     rememberIfKsfo('departures');
     var departurePatch = { ident: ident, callsign: cs || '', reg: tail || '', type: acType || '', from: orig || AIRPORT_ICAO, to: dest || '', departed: true, departISO: etd || nowISO, depart: fmtTimeLA(etd || nowISO), source: srcTag, timeSource: 'swim', etaNote: '' };
@@ -1273,14 +1511,15 @@ function ingestSwimFlightBlock(block, feedLabel) {
     removeLandedArrivalOnDeparture(key, departurePatch);
     did = true;
   } else if (type === 'DEPARTURE' && airportMatch(dest, AIRPORT_ICAO)) {
-    if (!isoWithinTodayPT(eta || etd)) return did;
+    if (!isoWithinTodayPT(eta || etd)) { diag('after-midnight'); return did; }
     swimStats.arrivals++;
     rememberIfKsfo('arrivals');
     upsertMovement('arrivals', key, { ident: ident, callsign: cs || '', reg: tail || '', type: acType || '', from: orig || '', to: dest || AIRPORT_ICAO, filedDest: AIRPORT_ICAO, divertTo: '', divertAirport: '', divertAt: 0, arrived: false, departISO: etd || nowISO, depart: fmtTimeLA(etd || nowISO), arriveISO: eta || '', arrive: eta ? fmtTimeLA(eta) : '', source: srcTag, timeSource: 'swim', etaNote: '' });
     did = true;
   } else if (type === 'FLIGHT_PLAN' || type === 'EN_ROUTE' || type === 'UNKNOWN') {
     if (airportMatch(dest, AIRPORT_ICAO)) {
-      if (isoWithinTodayPT(eta || etd)) {
+      if (!isoWithinTodayPT(eta || etd)) diag('after-midnight');
+      else {
         swimStats.arrivals++;
         rememberIfKsfo('arrivals');
         upsertMovement('arrivals', key, {
@@ -1310,7 +1549,22 @@ function ingestSwimFlightBlock(block, feedLabel) {
       }
     }
   }
+  diag(did ? ('board:' + type.toLowerCase()) : ('no-row:' + type.toLowerCase() + (eta || etd ? '' : ':notime')));
+  if (did) persistDirty = true;
   return did;
+}
+
+// Re-ingest a held TFMS flight once its type is known (from a later message or ADS-B `t`).
+function promotePendingTfms(acid, typeCode) {
+  var k = normIdent(acid);
+  var p = tfmsPendingUntyped.get(k);
+  if (!p) return false;
+  var t = normalizeIcaoType(typeCode);
+  if (!t) return false;
+  rememberTfmsType([acid], t);
+  tfmsPendingUntyped.delete(k);
+  if (Date.now() - p.at > 12 * 3600000) return false;
+  return ingestSwimFlightBlock(p.block, p.feedLabel);
 }
 
 function upsertMovement(board, key, patch) {
@@ -1464,6 +1718,7 @@ function upsertMovement(board, key, patch) {
 
   merged.lastUpdate = Date.now();
   m.set(resolved, merged);
+  persistDirty = true;
 }
 
 // ============================================================================================
@@ -1723,28 +1978,103 @@ function estimateEtaMin(distNm, gs, track, brgToField) {
   }
   return Math.max(1, Math.min(180, Math.round((distNm / closing) * 60)));
 }
+// ------------------------------------------------------------------------------------------
+// ADS-B evidence gates. ADS-B alone never says where an aircraft is going, and the Bay is full
+// of GA that is NOT landing at SFO (PAO/SQL/HAF/OAK/HWD traffic, Bay tours, Class B
+// transitions). An ADS-B-only arrival is shown only with real approach geometry; an ADS-B-only
+// departure only if we saw the aircraft on the ground / low at SFO first.
+// ------------------------------------------------------------------------------------------
+// True landing headings at KSFO: 28L/R ≈298°, 19L/R ≈208°, 10L/R ≈118°, 01L/R ≈028°.
+var SFO_RUNWAYS = [{ name: '28', hdg: 298 }, { name: '19', hdg: 208 }, { name: '10', hdg: 118 }, { name: '01', hdg: 28 }];
+var adsbArrHits = new Map();   // hex → { n, at } consecutive polls with approach evidence
+var sfoLowSeen = new Map();    // hex/ident → ms last seen on the ground / very low at SFO
+function adsbArrivalEvidence(o) {
+  if (o.distNm > 25) return { ok: false, reason: '>25nm' };
+  if (o.alt > 10000) return { ok: false, reason: '>10000ft' };
+  if (o.gs != null && (o.gs < 50 || o.gs > 300)) return { ok: false, reason: 'groundspeed ' + Math.round(o.gs) };
+  if (o.track == null) return { ok: false, reason: 'no track' };
+  var brgIn = bearingDeg(o.lat, o.lon, SFO_LAT, SFO_LON);
+  var brgFromField = (brgIn + 180) % 360;
+  // Altitude must sit near a plausible descent profile (3° ≈ 318 ft/nm). Way below it means a
+  // pattern at another field; way above means overflight.
+  var altMax = 1500 + 400 * o.distNm;
+  var altMin = Math.max(0, 318 * o.distNm - 1800);
+  if (o.alt > altMax) return { ok: false, reason: 'above profile' };
+  if (o.alt < altMin) return { ok: false, reason: 'below profile' };
+  var aligned = null;
+  for (var i = 0; i < SFO_RUNWAYS.length; i++) {
+    var rw = SFO_RUNWAYS[i];
+    var trkOff = angleDiffDeg(o.track, rw.hdg);
+    var posOff = angleDiffDeg(brgFromField, (rw.hdg + 180) % 360);
+    if (posOff > 90) continue;
+    var xtk = Math.abs(o.distNm * Math.sin(posOff * Math.PI / 180));
+    if (trkOff <= 25 && xtk <= (o.distNm <= 12 ? 1.5 : 2.5)) { aligned = rw; break; }
+  }
+  var pointing = angleDiffDeg(o.track, brgIn) <= 30;
+  var descending = (o.vrate != null) ? (o.vrate <= -250) : false;
+  var lowFinal = !!aligned && o.distNm <= 6 && o.alt <= 2500;
+  if (o.distNm <= 12) {
+    if (!aligned) return { ok: false, reason: 'not on a runway final' };
+    if (!descending && !lowFinal) return { ok: false, reason: 'not descending' };
+    return { ok: true, final: o.distNm <= 6, reason: 'final ' + aligned.name + ' ' + o.distNm.toFixed(1) + 'nm ' + Math.round(o.alt) + 'ft' };
+  }
+  if (!aligned && !pointing) return { ok: false, reason: 'not tracking to SFO' };
+  if (!descending) return { ok: false, reason: 'not descending' };
+  return { ok: true, final: false, reason: (aligned ? 'extended final ' + aligned.name : 'inbound') + ' ' + o.distNm.toFixed(1) + 'nm ' + Math.round(o.alt) + 'ft descending' };
+}
+function adsbDepartureEvidence(o, lowSeenAt) {
+  if (o.distNm > 15) return { ok: false, reason: '>15nm' };
+  if (o.alt > 10000 || o.alt < 100) return { ok: false, reason: 'altitude' };
+  if (o.track == null) return { ok: false, reason: 'no track' };
+  var brgOut = (bearingDeg(o.lat, o.lon, SFO_LAT, SFO_LON) + 180) % 360;
+  if (angleDiffDeg(o.track, brgOut) > 60) return { ok: false, reason: 'not moving away' };
+  if (!lowSeenAt || (Date.now() - lowSeenAt) > 15 * 60000) return { ok: false, reason: 'not seen on the ground at SFO' };
+  var climbing = (o.vrate != null) ? (o.vrate >= 300) : false;
+  if (!climbing && o.distNm > 4) return { ok: false, reason: 'not climbing' };
+  return { ok: true, reason: 'off SFO ' + o.distNm.toFixed(1) + 'nm ' + Math.round(o.alt) + 'ft' };
+}
+var adsbBoardStats = { at: 0, seen: 0, gaNear: 0, arrEvidence: 0, arrPlanned: 0, depEvidence: 0, rejected: {}, stale: false };
+function pruneStaleAdsbOnly() {
+  var now = Date.now(), changed = false;
+  movements.arrivals.forEach(function (f, key) {
+    if (!f || f.arrived || f.onGround) return;
+    if (isSwimishSource(f.source) || f.timeSource === 'swim' || lookupTfmsPlan(key, 'arrivals')) return;
+    if (!isAdsbBoardSource(f.source)) return;
+    if (!f.lastAdsbAt || (now - f.lastAdsbAt) > 150000) { movements.arrivals.delete(key); changed = true; }
+  });
+  movements.departures.forEach(function (f, key) {
+    if (!f) return;
+    if (isSwimishSource(f.source) || f.timeSource === 'swim' || lookupTfmsPlan(key, 'departures')) return;
+    if (!isAdsbBoardSource(f.source)) return;
+    if (!f.lastAdsbAt || (now - f.lastAdsbAt) > 10 * 60000) { movements.departures.delete(key); changed = true; }
+  });
+  return changed;
+}
 async function pollAdsbInboundBoard() {
-  if (isIdle()) { log('[ADSB board] skipped (idle)', 'INFO'); return; }
+  if (isIdle()) { log('[ADSB board] skipped (idle)', 'INFO'); if (pruneStaleAdsbOnly()) broadcast({ type: 'board' }); return; }
   try {
     var dist = Math.max(10, Math.min(80, ADSB_BOARD_RADIUS_NM));
     var data = await fetchAdsbLol(SFO_LAT, SFO_LON, dist);
     if (!data || !Array.isArray(data.states)) {
       log('[ADSB board] no data from adsb.lol (backoff or error)', 'WARN');
+      if (pruneStaleAdsbOnly()) broadcast({ type: 'board' });
+      return;
+    }
+    // fetchAdsbLol serves up to 10-minute-old cache during 429 backoff. Stale positions must not
+    // create or refresh ADS-B-only rows (that is how passed geometric ETAs turned into fake LANDED).
+    var dataAgeMs = adsbLolCache.at ? (Date.now() - adsbLolCache.at) : Infinity;
+    var stale = dataAgeMs > 100000;
+    adsbBoardStats = { at: Date.now(), seen: 0, gaNear: 0, arrEvidence: 0, arrPlanned: 0, depEvidence: 0, rejected: {}, stale: stale, dataAgeSec: Math.round(dataAgeMs / 1000) };
+    if (stale) {
+      log('[ADSB board] adsb.lol data is ' + Math.round(dataAgeMs / 1000) + 's old — not used for board rows', 'WARN');
+      if (pruneStaleAdsbOnly()) broadcast({ type: 'board' });
       return;
     }
     var list = Array.isArray(data.ac) ? data.ac : [];
     var seen = 0, arrN = 0, depN = 0;
     var keepArr = {}, keepDep = {};
-    if (!list.length && Array.isArray(data.states)) {
-      list = data.states.map(function (st) {
-        return {
-          hex: st[0], flight: (st[1] || '').trim(), lat: st[6], lon: st[5],
-          alt_baro: st[8] ? 'ground' : (st[7] != null ? st[7] / 0.3048 : null),
-          gs: st[9] != null ? st[9] / 0.514444 : null,
-          track: st[10], r: null, t: null
-        };
-      });
-    }
+    var nowMs = Date.now();
+    function reject(r) { adsbBoardStats.rejected[r] = (adsbBoardStats.rejected[r] || 0) + 1; }
     for (var i = 0; i < list.length; i++) {
       var ac = list[i];
       seen++;
@@ -1757,134 +2087,149 @@ async function pollAdsbInboundBoard() {
       if (distNm > dist + 5) continue;
       var flight = (ac.flight || '').trim().toUpperCase();
       var reg = String(ac.r || ac.reg || '').trim().toUpperCase();
-      // adsb.lol uses `t` for ICAO type; `type` is often the ADS-B emitter kind — never use emitter kind as aircraft type
       var typeCode = normalizeIcaoType(ac.t);
+      var hexKey = String(ac.hex || '').toLowerCase();
+      // Remember aircraft seen on the ground / very low at SFO (departure evidence).
+      if ((onGnd && distNm <= 2.5) || (!onGnd && distNm <= 3 && alt <= 1500)) {
+        if (hexKey) sfoLowSeen.set(hexKey, nowMs);
+      }
+      // A held TFMS flight (unknown operator, no type) can be promoted once ADS-B gives the type.
+      if (flight && typeCode && tfmsPendingUntyped.has(normIdent(flight))) {
+        if (promotePendingTfms(flight, typeCode)) arrN++;
+      }
       if (!isGaBizTraffic(flight, reg, typeCode)) continue;
+      adsbBoardStats.gaNear++;
       var track = (typeof ac.track === 'number') ? ac.track : (typeof ac.true_heading === 'number' ? ac.true_heading : null);
-      var brgIn = bearingDeg(lat, lon, SFO_LAT, SFO_LON); // toward field
-      var brgOut = (brgIn + 180) % 360; // away from field
-      var toward = track == null ? (distNm < 25) : (angleDiffDeg(track, brgIn) <= 70);
-      var away = track != null && angleDiffDeg(track, brgOut) <= 70;
+      var brgIn = bearingDeg(lat, lon, SFO_LAT, SFO_LON);
       var gs = (typeof ac.gs === 'number') ? ac.gs : null;
+      var vrate = (typeof ac.baro_rate === 'number') ? ac.baro_rate : (typeof ac.geom_rate === 'number' ? ac.geom_rate : null);
       var ident = reg || flight || String(ac.hex || '').toUpperCase();
       if (!ident || ident.charAt(0) === '~') continue;
       var key = ident.replace(/[^A-Z0-9]/g, '');
       if (!key) continue;
       var nowISO = new Date().toISOString();
+      var boardKey = resolveBoardKey(reg, flight, ac.hex) || key;
+      if (key !== boardKey && movements.arrivals.has(key)) mergeMovementMaps(key, boardKey);
+      var existingA = movements.arrivals.get(boardKey);
+      var planA = lookupTfmsPlan(boardKey, 'arrivals');
+      var filedKsfo = !!(planA || (existingA && (isSwimishSource(existingA.source) || existingA.timeSource === 'swim') && !existingA.divertTo));
+      var geo = { distNm: distNm, alt: alt, track: track, gs: gs, vrate: vrate, lat: lat, lon: lon };
 
-      // Inbound: airborne, toward field or close/low
-      var inbound = !onGnd && alt <= 18000 && (toward || (distNm <= 25 && alt <= 10000));
-      if (inbound) {
-        var etaMin = estimateEtaMin(distNm, gs, track, brgIn);
-        var etaISO = new Date(Date.now() + etaMin * 60000).toISOString();
-        var boardKey = resolveBoardKey(reg, flight, ac.hex);
-        if (!boardKey) boardKey = key;
-        // Merge orphan callsign-only / reg-only rows into canonical
-        if (key !== boardKey && movements.arrivals.has(key)) mergeMovementMaps(key, boardKey);
-        var existingA = movements.arrivals.get(boardKey);
-        // Already on the ramp — keep row for retention, but do not treat as a fresh inbound.
-        if (existingA && (existingA.arrived || existingA.onGround)) {
-          keepArr[boardKey] = true;
-          keepArr[key] = true;
-          continue;
+      if (onGnd) {
+        // Touchdown at SFO for a row we were already tracking inbound → on the ground.
+        if (existingA && distNm <= 2.5 && !existingA.arrived && !existingA.onGround) {
+          upsertMovement('arrivals', boardKey, { arrived: true, onGround: true, landedAt: nowMs, arriveISO: nowISO, arrive: fmtTimeLA(nowISO), etaNote: '', alt: 0, distNm: Math.round(distNm * 10) / 10, lastAdsbAt: nowMs });
+          arrN++;
         }
-        var planA = lookupTfmsPlan(boardKey, 'arrivals');
-        var hasSwimTime = (existingA && (isSwimishSource(existingA.source) || existingA.timeSource === 'swim') && existingA.arriveISO)
-          || (planA && planA.arriveISO);
-        var patchA = {
-          ident: (reg || (existingA && existingA.ident) || ident),
-          callsign: flight || (existingA && existingA.callsign) || ident,
-          reg: reg || (existingA && existingA.reg) || '',
-          type: typeCode || (existingA && existingA.type) || '',
-          arrived: false,
-          // ADS-B geometric ETA only when no SWIM filed time — map/progress always updated
-          alt: Math.round(alt),
-          distNm: Math.round(distNm * 10) / 10,
-          gs: gs != null ? Math.round(gs) : null,
-          adsbProgress: true
-        };
-        if (!hasSwimTime) {
-          patchA.arriveISO = etaISO;
-          patchA.arrive = fmtTimeLA(etaISO);
-          patchA.etaMin = etaMin;
-          patchA.etaNote = 'est. from ADS-B';
-          patchA.timeSource = 'adsb';
-          patchA.source = (existingA && isSwimishSource(existingA.source)) ? existingA.source : 'adsb-inbound';
-          if (!(existingA && existingA.from) && !(planA && planA.from)) {
-            patchA.from = '';
-            patchA.fromNote = 'ADS-B live';
-          }
-        } else {
-          patchA.source = (existingA && existingA.source) || 'swim+adsb';
-          patchA.timeSource = 'swim';
-          patchA.etaNote = '';
-        }
-        upsertMovement('arrivals', boardKey, patchA);
-        keepArr[boardKey] = true;
-        keepArr[key] = true;
-        arrN++;
+        if (existingA) { keepArr[boardKey] = true; keepArr[key] = true; }
         continue;
       }
-
-      // Outbound: just left / climbing away within ~35nm
-      var outbound = !onGnd && away && distNm <= 35 && alt <= 16000 && alt >= 200;
-      if (outbound) {
-        var boardKeyD = resolveBoardKey(reg, flight, ac.hex);
-        if (!boardKeyD) boardKeyD = key;
-        if (key !== boardKeyD && movements.departures.has(key)) mergeMovementMaps(key, boardKeyD);
-        var existingD = movements.departures.get(boardKeyD);
-        var planD = lookupTfmsPlan(boardKeyD, 'departures');
-        var patchD = {
-          ident: (reg || (existingD && existingD.ident) || ident),
-          callsign: flight || (existingD && existingD.callsign) || ident,
-          reg: reg || (existingD && existingD.reg) || '',
-          type: typeCode || (existingD && existingD.type) || '',
-          departed: true,
-          alt: Math.round(alt),
-          distNm: Math.round(distNm * 10) / 10,
-          gs: gs != null ? Math.round(gs) : null,
-          adsbProgress: true
-        };
-        if (existingD && isSwimishSource(existingD.source) && existingD.departISO) {
-          patchD.source = existingD.source;
-          patchD.timeSource = 'swim';
-        } else if (planD && planD.departISO) {
-          patchD.source = 'swim+adsb';
-          patchD.timeSource = 'swim';
-          patchD.departISO = planD.departISO;
-          patchD.depart = planD.depart || fmtTimeLA(planD.departISO);
-        } else {
-          patchD.departISO = nowISO;
-          patchD.depart = fmtTimeLA(nowISO);
-          patchD.source = 'adsb-outbound';
-          patchD.timeSource = 'adsb';
-          if (!(existingD && existingD.to) && !(planD && planD.to)) {
-            patchD.to = '';
-            patchD.toNote = 'ADS-B live';
-          }
+      // Already on the ramp — keep row for retention, but do not treat as a fresh inbound.
+      if (existingA && (existingA.arrived || existingA.onGround)) {
+        keepArr[boardKey] = true; keepArr[key] = true;
+      } else if (filedKsfo) {
+        // TFMS says KSFO: ADS-B only contributes position/progress, never the ETA.
+        if (distNm <= 60 && alt <= 18000 && (track == null || angleDiffDeg(track, brgIn) <= 90 || distNm <= 15)) {
+          upsertMovement('arrivals', boardKey, {
+            ident: (reg || (existingA && existingA.ident) || ident),
+            callsign: flight || (existingA && existingA.callsign) || ident,
+            reg: reg || (existingA && existingA.reg) || '',
+            type: typeCode || (existingA && existingA.type) || '',
+            arrived: false, alt: Math.round(alt), distNm: Math.round(distNm * 10) / 10,
+            gs: gs != null ? Math.round(gs) : null, adsbProgress: true, lastAdsbAt: nowMs,
+            source: (existingA && existingA.source) || 'swim+adsb', timeSource: 'swim', etaNote: ''
+          });
+          keepArr[boardKey] = true; keepArr[key] = true;
+          adsbBoardStats.arrPlanned++;
+          arrN++;
+          continue;
         }
-        if (!(existingD && existingD.from) && !(planD && planD.from)) patchD.from = AIRPORT_ICAO;
-        upsertMovement('departures', boardKeyD, patchD);
-        if (patchD.departed) removeLandedArrivalOnDeparture(boardKeyD, patchD);
-        keepDep[boardKeyD] = true;
-        keepDep[key] = true;
-        depN++;
+      } else {
+        var elsewhere = tfmsElsewhereFor([reg, flight, boardKey]);
+        var ev = elsewhere ? { ok: false, reason: 'TFMS dest ' + elsewhere.dest } : adsbArrivalEvidence(geo);
+        if (ev.ok) {
+          var h = adsbArrHits.get(hexKey || boardKey);
+          var n = (h && (nowMs - h.at) < 120000) ? h.n + 1 : 1;
+          adsbArrHits.set(hexKey || boardKey, { n: n, at: nowMs });
+          // Two consecutive polls of approach geometry, or already on a short final.
+          if (n >= 2 || ev.final || existingA) {
+            var etaMin = estimateEtaMin(distNm, gs, track, brgIn);
+            var etaISO = new Date(nowMs + etaMin * 60000).toISOString();
+            upsertMovement('arrivals', boardKey, {
+              ident: (reg || (existingA && existingA.ident) || ident),
+              callsign: flight || (existingA && existingA.callsign) || ident,
+              reg: reg || (existingA && existingA.reg) || '',
+              type: typeCode || (existingA && existingA.type) || '',
+              arrived: false, alt: Math.round(alt), distNm: Math.round(distNm * 10) / 10,
+              gs: gs != null ? Math.round(gs) : null, adsbProgress: true, lastAdsbAt: nowMs,
+              arriveISO: etaISO, arrive: fmtTimeLA(etaISO), etaMin: etaMin,
+              etaNote: 'est. from ADS-B', timeSource: 'adsb', source: 'adsb-inbound',
+              from: '', fromNote: 'ADS-B approach', adsbEvidence: ev.reason
+            });
+            keepArr[boardKey] = true; keepArr[key] = true;
+            adsbBoardStats.arrEvidence++;
+            arrN++;
+            continue;
+          }
+        } else {
+          adsbArrHits.delete(hexKey || boardKey);
+          if (distNm <= 25 && alt <= 10000) reject(ev.reason);
+        }
       }
+
+      // Departures: TFMS departure plan, or seen on the ground/low at SFO and now climbing away.
+      var boardKeyD = boardKey;
+      if (key !== boardKeyD && movements.departures.has(key)) mergeMovementMaps(key, boardKeyD);
+      var existingD = movements.departures.get(boardKeyD);
+      var planD = lookupTfmsPlan(boardKeyD, 'departures');
+      var hasPlanD = !!(planD || (existingD && (isSwimishSource(existingD.source) || existingD.timeSource === 'swim')));
+      var dev = adsbDepartureEvidence(geo, hexKey ? sfoLowSeen.get(hexKey) : 0);
+      var brgOut = (brgIn + 180) % 360;
+      var awayish = track != null && angleDiffDeg(track, brgOut) <= 70 && distNm <= 35 && alt >= 200 && alt <= 16000;
+      if (!(dev.ok || (hasPlanD && awayish))) continue;
+      var patchD = {
+        ident: (reg || (existingD && existingD.ident) || ident),
+        callsign: flight || (existingD && existingD.callsign) || ident,
+        reg: reg || (existingD && existingD.reg) || '',
+        type: typeCode || (existingD && existingD.type) || '',
+        departed: true, alt: Math.round(alt), distNm: Math.round(distNm * 10) / 10,
+        gs: gs != null ? Math.round(gs) : null, adsbProgress: true, lastAdsbAt: nowMs
+      };
+      if (existingD && isSwimishSource(existingD.source) && existingD.departISO) {
+        patchD.source = existingD.source; patchD.timeSource = 'swim';
+      } else if (planD && planD.departISO) {
+        patchD.source = 'swim+adsb'; patchD.timeSource = 'swim';
+        patchD.departISO = planD.departISO; patchD.depart = planD.depart || fmtTimeLA(planD.departISO);
+      } else {
+        patchD.departISO = (existingD && existingD.departISO) || nowISO;
+        patchD.depart = fmtTimeLA(patchD.departISO);
+        patchD.source = 'adsb-outbound'; patchD.timeSource = 'adsb'; patchD.adsbEvidence = dev.reason;
+        if (!(existingD && existingD.to) && !(planD && planD.to)) { patchD.to = ''; patchD.toNote = 'ADS-B live'; }
+      }
+      if (!(existingD && existingD.from) && !(planD && planD.from)) patchD.from = AIRPORT_ICAO;
+      upsertMovement('departures', boardKeyD, patchD);
+      removeLandedArrivalOnDeparture(boardKeyD, patchD);
+      keepDep[boardKeyD] = true; keepDep[key] = true;
+      if (dev.ok) adsbBoardStats.depEvidence++;
+      depN++;
     }
+    adsbBoardStats.seen = seen;
     var droppedA = 0, droppedD = 0;
     movements.arrivals.forEach(function (f, key) {
-      if (!f || keepArr[key]) return;
+      if (!f || keepArr[key] || f.arrived || f.onGround) return;
       // Never drop KSFO TFMS/SWIM filed rows just because ADS-B went quiet — keep through PT midnight.
-      if (isSwimishSource(f.source) || f.timeSource === 'swim' || lookupTfmsPlan(key)) return;
+      if (isSwimishSource(f.source) || f.timeSource === 'swim' || lookupTfmsPlan(key, 'arrivals')) return;
       if (f.source === 'adsb-inbound' || f.source === 'adsb') { movements.arrivals.delete(key); droppedA++; }
     });
     movements.departures.forEach(function (f, key) {
       if (!f || keepDep[key]) return;
-      if (isSwimishSource(f.source) || f.timeSource === 'swim' || lookupTfmsPlan(key)) return;
-      if (f.source === 'adsb-outbound' || f.source === 'adsb') { movements.departures.delete(key); droppedD++; }
+      if (isSwimishSource(f.source) || f.timeSource === 'swim' || lookupTfmsPlan(key, 'departures')) return;
+      if ((f.source === 'adsb-outbound' || f.source === 'adsb') && (!f.lastAdsbAt || nowMs - f.lastAdsbAt > 10 * 60000)) { movements.departures.delete(key); droppedD++; }
     });
+    sfoLowSeen.forEach(function (t, k) { if (nowMs - t > 30 * 60000) sfoLowSeen.delete(k); });
+    adsbArrHits.forEach(function (v, k) { if (nowMs - v.at > 300000) adsbArrHits.delete(k); });
     var backfilled = backfillBoardFromAdsbList(list);
-    log('[ADSB board] seen=' + seen + ' arr=' + arrN + ' dep=' + depN + ' dropA=' + droppedA + ' dropD=' + droppedD + ' backfill=' + backfilled + ' r=' + dist + 'nm', (arrN || depN || backfilled) ? 'OK' : 'WARN');
+    log('[ADSB board] seen=' + seen + ' ga=' + adsbBoardStats.gaNear + ' arrEvidence=' + adsbBoardStats.arrEvidence + ' arrPlanned=' + adsbBoardStats.arrPlanned + ' dep=' + depN + ' dropA=' + droppedA + ' dropD=' + droppedD + ' backfill=' + backfilled + ' rejected=' + JSON.stringify(adsbBoardStats.rejected), 'INFO');
     if (arrN || depN || droppedA || droppedD || backfilled) broadcast({ type: 'board' });
   } catch (e) {
     log('[ADSB board] ' + e.message, 'WARN');
@@ -1912,7 +2257,10 @@ function pruneLandedArrivals() {
     if (!f) return;
     var arrMs = f.arriveISO ? new Date(f.arriveISO).getTime() : 0;
     if (arrMs && isNaN(arrMs)) arrMs = 0;
-    var landed = !!f.arrived || (arrMs > 0 && arrMs <= now);
+    // A passed ADS-B *geometric* ETA is not a landing — only a filed/SWIM time or an observed
+    // touchdown counts (ADS-B-only ghosts used to turn into permanent "LANDED" rows).
+    var geometricOnly = f.timeSource === 'adsb' || (isAdsbBoardSource(f.source) && !isSwimishSource(f.source));
+    var landed = !!f.arrived || !!f.onGround || (!geometricOnly && arrMs > 0 && arrMs <= now);
     if (!landed) return;
     // A filed/estimated arrival that has passed is on-ground for retention
     // purposes even if SWIM has not emitted its explicit ARRIVAL event yet.
@@ -2662,6 +3010,20 @@ function sendJSON(res, status, obj) {
   res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
   res.end(JSON.stringify(obj));
 }
+function boardCounts() {
+  function count(m) {
+    var c = { total: 0, swim: 0, adsbOnly: 0, other: 0 };
+    m.forEach(function (f) {
+      if (!f) return;
+      c.total++;
+      if (isSwimishSource(f.source) || f.timeSource === 'swim') c.swim++;
+      else if (isAdsbBoardSource(f.source)) c.adsbOnly++;
+      else c.other++;
+    });
+    return c;
+  }
+  return { arrivals: count(movements.arrivals), departures: count(movements.departures), tfmsPlans: tfmsPlanByAircraft.size };
+}
 function buildStatusPayload() {
   return Object.assign(getCreditSummary(), {
     swim: swimStats,
@@ -2675,7 +3037,16 @@ function buildStatusPayload() {
     boardMode: SWIM_ENABLED ? 'swim' : 'adsb-live',
     boardWindow: 'until-midnight-PT',
     landedHoldMs: LANDED_KEEP_MS,
-    idle: { paused: isIdle(), secondsSinceLastClient: Math.round((Date.now() - lastClientSeenAt) / 1000) },
+    idle: { paused: isIdle(), pausesOnly: 'adsb/opensky polling', swimIngestPaused: false, secondsSinceLastClient: Math.round((Date.now() - lastClientSeenAt) / 1000) },
+    uptimeSec: Math.round(process.uptime()),
+    persist: Object.assign({}, persistStatus, { lastSaveAgo: persistStatus.lastSaveAt ? Math.round((Date.now() - persistStatus.lastSaveAt) / 1000) : null }),
+    boardCounts: boardCounts(),
+    adsbBoard: adsbBoardStats,
+    swimDiag: {
+      sinceSec: Math.round((Date.now() - swimDiag.since) / 1000), payloads: swimDiag.payloads, blocks: swimDiag.blocks,
+      maxBlocksPerPayload: swimDiag.maxBlocksPerPayload, homeBlocks: swimDiag.homeBlocks, homeByDecision: swimDiag.homeByDecision,
+      lastLagSec: swimDiag.lastLagSec, maxLagSec: swimDiag.maxLagSec, pendingUntyped: tfmsPendingUntyped.size, typeCache: tfmsTypeByAcid.size
+    },
     connectedClients: wsClients.size,
     airport: AIRPORT_ICAO,
     fuelPricePerGal: FUEL_PRICE_PER_GAL
@@ -2714,6 +3085,22 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/adsb/states') { touchActivity(); await handleAdsbStates(parsed.query, res); return; }
   if (pathname.startsWith('/osky/')) { touchActivity(); await proxyOsky(req.url.replace('/osky', ''), res); return; }
   if (pathname === '/status') { sendJSON(res, 200, buildStatusPayload()); return; }
+  if (pathname === '/api/swim-diag') {
+    var plansOut = [];
+    tfmsPlanByAircraft.forEach(function (bag, k) {
+      ['arrivals', 'departures'].forEach(function (b) {
+        var pl = bag && bag[b];
+        if (pl) plansOut.push({ key: k, board: b, ident: pl.ident, callsign: pl.callsign, type: pl.type, from: pl.from, to: pl.to, depart: pl.depart, arrive: pl.arrive });
+      });
+    });
+    sendJSON(res, 200, Object.assign({}, swimDiag, {
+      pendingUntyped: Array.from(tfmsPendingUntyped.keys()),
+      plans: plansOut,
+      adsbBoard: adsbBoardStats,
+      persist: persistStatus
+    }));
+    return;
+  }
 
   if (pathname === '/api/arrivals') { touchActivity(); sendJSON(res, 200, await buildBoard('arrivals')); return; }
   if (pathname === '/api/departures') { touchActivity(); sendJSON(res, 200, await buildBoard('departures')); return; }
@@ -2808,11 +3195,18 @@ setInterval(() => broadcast({ type: 'status', data: buildStatusPayload() }), 150
 setInterval(pruneAndAccumulateGround, 60000);
 setInterval(function () { if (pruneDivertedMovements()) broadcast({ type: 'board' }); }, 60000);
 setInterval(function () { if (pruneLandedArrivals()) broadcast({ type: 'board' }); }, 30000);
+setInterval(function () { if (pruneStaleAdsbOnly()) broadcast({ type: 'board' }); }, 30000);
+setInterval(function () { if (pruneOldOnGround()) broadcast({ type: 'board' }); }, 10 * 60000);
+var lastForcedSave = Date.now();
+setInterval(function () {
+  if (persistDirty || Date.now() - lastForcedSave > 5 * 60000) { lastForcedSave = Date.now(); saveSnapshot('interval'); }
+}, 60000);
 setInterval(function () { if (pruneTfmsPlansPastMidnight()) broadcast({ type: 'board' }); }, 300000);
 setInterval(function () { loadLaddBlocklist().catch(function () {}); }, 6 * 3600000);
 
 async function main() {
   await initSchema();
+  await restoreSnapshot();
   await adbLoadUsage();
   await loadLaddBlocklist();
   server.listen(PORT, '0.0.0.0', () => log('Skyway v250 — http://0.0.0.0:' + PORT, 'OK'));
@@ -2847,4 +3241,27 @@ async function main() {
   }
 }
 main().catch(e => { log('Fatal boot error: ' + e.message, 'ERR'); process.exit(1); });
-process.on('SIGINT', () => { log('Bye', 'WARN'); pool.end(); process.exit(0); });
+var shuttingDown = false;
+async function shutdown(sig) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  log(sig + ' — saving board snapshot before exit', 'WARN');
+  var t = setTimeout(function () { process.exit(0); }, 8000);
+  try { await saveSnapshot(sig); } catch (e) { }
+  clearTimeout(t);
+  try { await pool.end(); } catch (e) { }
+  process.exit(0);
+}
+process.on('SIGINT', function () { shutdown('SIGINT'); });
+process.on('SIGTERM', function () { shutdown('SIGTERM'); });
+// Test hook only (never set in production): exposes internals to scripts/test-board.js.
+if (process.env.SKYWAY_TEST === '1') {
+  module.exports = {
+    handleSwimMsg: handleSwimMsg, movements: movements, tfmsPlanByAircraft: tfmsPlanByAircraft,
+    adsbArrivalEvidence: adsbArrivalEvidence, adsbDepartureEvidence: adsbDepartureEvidence,
+    buildBoard: buildBoard, isGaBizTraffic: isGaBizTraffic, swimDiag: swimDiag, tfmsPendingUntyped: tfmsPendingUntyped,
+    promotePendingTfms: promotePendingTfms, saveSnapshot: saveSnapshot, restoreSnapshot: restoreSnapshot,
+    buildSnapshot: buildSnapshot, pruneLandedArrivals: pruneLandedArrivals, pruneStaleAdsbOnly: pruneStaleAdsbOnly,
+    tfmsElsewhereFor: tfmsElsewhereFor, identAliases: identAliases
+  };
+}
