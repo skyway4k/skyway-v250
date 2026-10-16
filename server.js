@@ -22,7 +22,7 @@ const { Pool } = require('pg');
 // ============================================================================================
 
 function log(m, l = 'INFO') {
-  const t = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  const t = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
   const c = { INFO: '\x1b[37m', OK: '\x1b[32m', WARN: '\x1b[33m', ERR: '\x1b[31m', MSG: '\x1b[36m' };
   console.log(`${c[l] || c.INFO}[${t}] [${l}]\x1b[0m ${m}`);
 }
@@ -1266,7 +1266,7 @@ function xval(xml) {
 }
 function fmtTimeLA(iso) {
   if (!iso) return '';
-  return new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Los_Angeles' });
+  return new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'America/Los_Angeles' });
 }
 // Normalize airport codes so TFMS 3-letter (SFO) matches AIRPORT_ICAO (KSFO).
 function normAirport(code) {

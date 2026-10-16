@@ -2088,7 +2088,7 @@ window.onload=function(){
   });
 
   setInterval(buildFaMapSet,30000);
-  setInterval(function(){document.getElementById('ck').textContent=new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})},1000);
+  setInterval(function(){document.getElementById('ck').textContent=new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'})},1000);
 };
 
 function getAP(){return APT[airport]||{lat:37.62818,lon:-122.38487,n:airport};}
@@ -3234,7 +3234,7 @@ function fetchBoards(){
   setTimeout(drawChart,600);
 }
 
-function now(){return new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});}
+function now(){return new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hourCycle:'h23'});}
 function setPill(c,t){document.getElementById('pill').className='pill '+c;document.getElementById('pt').textContent=t;}
 
 // WebSocket for SWIM status
@@ -5447,7 +5447,7 @@ function showShiftReport(){
   fetch('/api/ground').then(function(r){return r.json();}).then(function(g){
     var now=new Date();
     var dateStr=now.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-    var timeStr=now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});
+    var timeStr=now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
     var hr=now.getHours();
     var shift=hr>=6&&hr<14?'Day':hr>=14&&hr<22?'Swing':'Grave';
     // Group aircraft by assigned line/spot
@@ -5501,9 +5501,9 @@ function showShiftReport(){
       for(var ji=0;ji<gList.length;ji++){
         var fj=gList[ji];
         var depT=fj.nextDepartISO?new Date(fj.nextDepartISO):null;
-        var depTime=depT?depT.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false}):'TBD';
+        var depTime=depT?depT.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hourCycle:'h23'}):'TBD';
         var depDate=depT?(depT.getMonth()+1)+'/'+depT.getDate():'—';
-        var onLine=fj.arrivedISO?new Date(fj.arrivedISO).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false}):'—';
+        var onLine=fj.arrivedISO?new Date(fj.arrivedISO).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hourCycle:'h23'}):'—';
         var dest=fj.nextDest||'—';
         var bg=ji%2===0?'#fff':'#f9fafb';
         // Highlight if departing within next 4hr (like yellow on paper sheet)
@@ -5568,7 +5568,7 @@ function showShiftReport(){
       for(var j=0;j<exp.length;j++){
         var ar=exp[j];
         var arD=new Date(ar.arriveISO);
-        var arT=arD.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});
+        var arT=arD.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
         var mins=Math.round((arD.getTime()-now)/60000);
         var inStr=mins<60?mins+'m':Math.floor(mins/60)+'h '+(mins%60)+'m';
         var bg=j%2===0?'#fff':'#f9fafb';
