@@ -3448,6 +3448,47 @@ async function runCallsignLookup() {
   }
 }
 
+// TIME ON BASE: match an arriving / landed aircraft to its next outbound KSFO departure
+// (same canonical aircraft via tail↔callsign aliases) with the first ETD after its arrival.
+function aircraftKeys(f, key) {
+  var out = [];
+  [key, f && f.ident, f && f.reg, f && f.callsign, inferFracNReg((f && f.callsign) || '')].forEach(function (v) {
+    var n = normIdent(v);
+    if (!n) return;
+    if (out.indexOf(n) < 0) out.push(n);
+    var c = identAliases.get(n);
+    if (c && out.indexOf(c) < 0) out.push(c);
+  });
+  return out;
+}
+function buildDepartureIndex() {
+  var idx = new Map();
+  movements.departures.forEach(function (d, k) {
+    if (!d || d.departed || !d.departISO) return;
+    if (d.from && !airportMatch(d.from, AIRPORT_ICAO)) return;
+    aircraftKeys(d, k).forEach(function (n) {
+      var l = idx.get(n); if (!l) { l = []; idx.set(n, l); }
+      if (l.indexOf(d) < 0) l.push(d);
+    });
+  });
+  return idx;
+}
+function nextDepartureFor(f, key, idx) {
+  var landed = !!(f.arrived || f.onGround);
+  var arrMs = Date.parse(f.arriveISO || '') || 0;
+  var refMs = landed ? (f.landedAt || arrMs || Date.now()) : arrMs;
+  if (!refMs) return null;
+  var best = null, bestMs = 0;
+  aircraftKeys(f, key).forEach(function (n) {
+    (idx.get(n) || []).forEach(function (d) {
+      var dm = Date.parse(d.departISO) || 0;
+      if (!dm || dm < refMs - 5 * 60000) return; // must be after this arrival
+      if (!best || dm < bestMs) { best = d; bestMs = dm; }
+    });
+  });
+  return best;
+}
+
 async function buildBoard(kind) {
   var m = movements[kind];
   var list = [];
@@ -3457,8 +3498,16 @@ async function buildBoard(kind) {
   pruneDivertedMovements();
   if (kind === 'arrivals') pruneLandedArrivals();
   entries = Array.from(m.values());
+  var entryKeys = Array.from(m.keys());
+  var depIdx = kind === 'arrivals' ? buildDepartureIndex() : null;
   for (var i = 0; i < entries.length; i++) {
     var f = Object.assign({}, entries[i]);
+    if (depIdx) {
+      var nd = nextDepartureFor(f, entryKeys[i], depIdx);
+      f.nextDepartISO = nd ? nd.departISO : '';
+      f.nextDepart = nd ? (nd.depart || fmtTimeLA(nd.departISO)) : '';
+      f.nextDepartTo = nd ? (nd.to || '') : '';
+    }
     f = enrichMovementLoc(f, kind);
     // Drop expired diverts (also pruned above; belt-and-suspenders for in-flight hold).
     if (f.divertAt && (Date.now() - f.divertAt) > DIVERT_HOLD_MS) continue;
@@ -3879,7 +3928,10 @@ async function main() {
     broadcast({ type: 'board' });
   }
 }
-main().catch(e => { log('Fatal boot error: ' + e.message, 'ERR'); process.exit(1); });
+// SKYWAY_TEST_NODB=1 (test hook only): load the module for DB-less unit checks without booting.
+if (!(process.env.SKYWAY_TEST === '1' && process.env.SKYWAY_TEST_NODB === '1')) {
+  main().catch(e => { log('Fatal boot error: ' + e.message, 'ERR'); process.exit(1); });
+}
 var shuttingDown = false;
 async function shutdown(sig) {
   if (shuttingDown) return;
@@ -3901,7 +3953,7 @@ if (process.env.SKYWAY_TEST === '1') {
     buildBoard: buildBoard, isGaBizTraffic: isGaBizTraffic, swimDiag: swimDiag, tfmsPendingUntyped: tfmsPendingUntyped,
     promotePendingTfms: promotePendingTfms, saveSnapshot: saveSnapshot, restoreSnapshot: restoreSnapshot,
     buildSnapshot: buildSnapshot, pruneLandedArrivals: pruneLandedArrivals, pruneStaleAdsbOnly: pruneStaleAdsbOnly,
-    tfmsElsewhereFor: tfmsElsewhereFor, identAliases: identAliases, boardWindowInfo: boardWindowInfo, sunEventUtcMs: sunEventUtcMs, isoWithinTodayPT: isoWithinTodayPT, pruneTfmsPlansPastMidnight: pruneTfmsPlansPastMidnight, rehydrateFromPlans: rehydrateFromPlans, repairMisDeparted: repairMisDeparted, toIcaoAirport: toIcaoAirport, runCallsignLookup: runCallsignLookup,
+    tfmsElsewhereFor: tfmsElsewhereFor, identAliases: identAliases, boardWindowInfo: boardWindowInfo, sunEventUtcMs: sunEventUtcMs, isoWithinTodayPT: isoWithinTodayPT, pruneTfmsPlansPastMidnight: pruneTfmsPlansPastMidnight, buildDepartureIndex: buildDepartureIndex, nextDepartureFor: nextDepartureFor, rehydrateFromPlans: rehydrateFromPlans, repairMisDeparted: repairMisDeparted, toIcaoAirport: toIcaoAirport, runCallsignLookup: runCallsignLookup,
     isLaddBlocked: isLaddBlocked, laddMaskRow: laddMaskRow, parseLaddList: parseLaddList, ingestLaddText: ingestLaddText, buildSwimArrivals: buildSwimArrivals, loadLaddBlocklist: loadLaddBlocklist, laddBlocked: laddBlocked, requireRampEditAuth: requireRampEditAuth, laddStatusPayload: laddStatusPayload
   };
 }

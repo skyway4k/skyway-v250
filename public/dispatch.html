@@ -733,6 +733,59 @@ body.view-line-room .empty{color:#94a3b8}
   html body.view-lobby .board>.cols,html body.view-lobby .bb .fr{grid-template-columns:minmax(5.5rem,1.3fr) minmax(0,1.1fr) minmax(3.6rem,.8fr)!important}
   html body.view-lobby .board .fr .fe{font-size:16px!important}
 }
+
+/* =====================================================================================
+   CONDENSED ROWS + TIME ON BASE (all views). One line per row where possible: the model and
+   city sub-lines move to tooltips; the callsign stays under the tail only when it differs.
+   ON BASE is the last DOM child but placed far-left with order:-1, so every existing
+   nth-child column rule above still targets the same cells.
+   ===================================================================================== */
+.bb .fr{padding:4px 8px!important;margin-bottom:2px!important;row-gap:1px!important;line-height:1.12}
+.board>.cols{padding-top:5px!important;padding-bottom:5px!important}
+.bb .fr .ft .sub.tm,.bb .fr .ff .sub,.bb .fr .ongnd{display:none!important}
+.bb .fr .fi .sub{margin-top:0!important;line-height:1.05}
+.bb .fr>.fob,.board>.cols.ca>.obh{order:-1}
+.bb .fr>.fob{font-family:var(--mono);font-weight:800;font-size:12px;white-space:nowrap!important;overflow-wrap:normal!important;word-break:normal!important;text-align:left;align-self:center;letter-spacing:-.2px}
+.board>.cols.ca>.obh{text-align:left;white-space:nowrap}
+.fob.ob-gnd{color:var(--cyan)}
+.fob.ob-plan{color:var(--t2)}
+.fob.ob-over{color:var(--amber)}
+.fob.ob-none{color:var(--t3);font-weight:600}
+body.view-line-room .bb .fr .fob.ob-plan{color:#e2e8f0}
+body.view-line-room .bb .fr .fob.ob-none{color:#94a3b8}
+body.view-line-room .bb .fr .fob.ob-gnd{color:#22d3ee}
+body.view-line-room .bb .fr .fob.ob-over{color:#fbbf24}
+/* Arrival-side grids get one narrow leading ON BASE track */
+html body .board>.cols.ca,html body #ab .fr,html body #adb .fr{grid-template-columns:minmax(4.1rem,.45fr) minmax(6.2rem,1.15fr) minmax(1.75rem,.45fr) minmax(2rem,.55fr) minmax(2.5rem,1.15fr) minmax(2.5rem,1.35fr) minmax(2.25rem,.95fr) minmax(2.25rem,.95fr) minmax(3.8rem,.8fr) minmax(2.5rem,.8fr) minmax(2.75rem,.55fr)!important}
+html body.view-gm .board>.cols.ca,html body.view-gm #ab .fr,html body.view-gm #adb .fr{grid-template-columns:minmax(4.1rem,.45fr) minmax(5rem,1.1fr) max-content max-content 1fr 1.2fr .55fr .7fr .75fr .85fr!important}
+html body.view-lobby .board>.cols.ca,html body.view-lobby #ab .fr,html body.view-lobby #adb .fr{grid-template-columns:minmax(4.6rem,.6fr) minmax(5.5rem,1.4fr) 1.1fr .9fr!important}
+html body.view-lobby .bb .fr>.fob{font-size:15px}
+@media (max-width:600px){
+  html body .board>.bb{padding:2px 3px!important}
+  html body .board .bh{padding:6px 10px!important}
+  html body .board>.cols{padding:4px 6px!important;column-gap:5px!important}
+  html body .board .fr{padding:4px 6px!important;column-gap:5px!important;row-gap:1px!important;margin-bottom:2px!important}
+  html body .board .fr .fi{font-size:16px!important;line-height:1.08!important;padding-left:10px!important}
+  html body .board .fr .fi .sub{font-size:11px!important;margin-top:0!important}
+  html body .board .fr .ft{font-size:14px!important;line-height:1.08!important}
+  html body .board .fr .ff{font-size:13px!important;line-height:1.08!important}
+  html body .board .fr .fe{font-size:14px!important;line-height:1.05!important}
+  html body .board .fr .fe .eta-clk{font-size:10px!important;line-height:1.05!important}
+  html body .board .fr .pax{padding:1px 2px!important;height:22px}
+  html body .board .fr .ramp-edit-btn{width:18px;height:18px;line-height:16px}
+  html body .bb .fr>.fob{font-size:11.5px}
+  html body .board>.cols.ca>.obh{font-size:9.5px;letter-spacing:.2px}
+  /* phone grids: ON BASE + the existing phone tracks */
+  html body:not(.view-lobby):not(.view-gm) .board>.cols.ca,
+  html body:not(.view-lobby):not(.view-gm) #ab .fr,
+  html body:not(.view-lobby):not(.view-gm) #adb .fr{grid-template-columns:minmax(3.3rem,.5fr) minmax(4.9rem,1.2fr) minmax(0,1fr) minmax(0,1fr) minmax(3.4rem,.8fr) minmax(0,.6fr) minmax(2.3rem,.5fr)!important}
+  html body.view-gm .board>.cols.ca,html body.view-gm #ab .fr,html body.view-gm #adb .fr{grid-template-columns:minmax(3.3rem,.5fr) minmax(4.9rem,1.2fr) minmax(0,.85fr) minmax(0,1.2fr) minmax(1.8rem,.4fr) minmax(0,.9fr) minmax(0,.75fr)!important}
+  html body.view-lobby .board>.cols.ca,html body.view-lobby #ab .fr,html body.view-lobby #adb .fr{grid-template-columns:minmax(4.2rem,.6fr) minmax(5.5rem,1.3fr) minmax(0,1.1fr) minmax(3.6rem,.8fr)!important}
+  html body.view-lobby .bb .fr>.fob{font-size:14px}
+  /* badge line sits under IDENT, not under ON BASE */
+  html body #ab .fr>.fop,html body #adb .fr>.fop{grid-column:2!important}
+  html body #ab .fr>.fst,html body #adb .fr>.fst{grid-column:3/-1!important}
+}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/twemoji.min.js" crossorigin="anonymous"></script>
@@ -828,11 +881,11 @@ body.view-line-room .empty{color:#94a3b8}
 </div>
 <div class="resize-bar" id="resizeBar"><div class="resize-grip"></div></div>
 <div class="boards">
-<div class="board"><div class="bh"><div class="bt ar" id="arrTitle">🛬 Scheduled arrivals — through midnight PT</div><span class="bc" id="anc">0</span></div><div class="cols ca"><span>Ident</span><span></span><span></span><span>Type</span><span>From</span><span>Depart</span><span>Arrive</span><span>ETA</span><span>Spot</span><span>PAX</span></div><div class="bb" id="ab"></div></div>
+<div class="board"><div class="bh"><div class="bt ar" id="arrTitle">🛬 Scheduled arrivals — through midnight PT</div><span class="bc" id="anc">0</span></div><div class="cols ca"><span>Ident</span><span></span><span></span><span>Type</span><span>From</span><span>Depart</span><span>Arrive</span><span>ETA</span><span>Spot</span><span>PAX</span><span class="obh" title="Time on base: countdown to ETD when landed; planned ground time (ETD − ETA) when inbound">On base</span></div><div class="bb" id="ab"></div></div>
 <div class="board"><div class="bh"><div class="bt de" id="depTitle">🛫 Scheduled departures — through midnight PT</div><span class="bc" id="dnc">0</span></div><div class="cols cd"><span>Ident</span><span></span><span></span><span>Type</span><span>To</span><span>Depart</span><span>ETD</span><span>Spot</span></div><div class="bb" id="db"></div></div>
 </div>
 <div class="boards done-boards">
-<div class="board"><div class="bh" id="ah"><div class="bt ar" id="arrdTitle">🛬 Arrived — on ground</div><span class="bc" id="adc">0</span></div><div class="cols ca" id="ahcols"><span>Ident</span><span></span><span></span><span>Type</span><span>From</span><span>Depart</span><span>Arrive</span><span>ETA</span><span>Spot</span><span>PAX</span></div><div class="bb" id="adb"></div></div>
+<div class="board"><div class="bh" id="ah"><div class="bt ar" id="arrdTitle">🛬 Arrived — on ground</div><span class="bc" id="adc">0</span></div><div class="cols ca" id="ahcols"><span>Ident</span><span></span><span></span><span>Type</span><span>From</span><span>Depart</span><span>Arrive</span><span>ETA</span><span>Spot</span><span>PAX</span><span class="obh" title="Time on base: countdown to ETD">On base</span></div><div class="bb" id="adb"></div></div>
 <div class="board"><div class="bh" id="dh"><div class="bt de" id="depdTitle">🛫 Departed — last 6 hrs</div><span class="bc" id="ddc">0</span></div><div class="cols cd" id="dhcols"><span>Ident</span><span></span><span></span><span>Type</span><span>To</span><span>Depart</span><span>ETD</span><span>Spot</span></div><div class="bb" id="ddb"></div></div>
 </div>
 </body>
@@ -1229,15 +1282,17 @@ function applyViewChrome(){
   var cad=document.getElementById('ahcols');
   var cdd=document.getElementById('dhcols');
   if(VIEW_MODE==='lobby'){
-    if(ca)ca.innerHTML='<span>Ident</span><span>Type</span><span>ETA</span>';
+    var obH='<span class="obh" title="Time on base">On base</span>';
+    if(ca)ca.innerHTML='<span>Ident</span><span>Type</span><span>ETA</span>'+obH;
     if(cd)cd.innerHTML='<span>Ident</span><span>Type</span><span>ETD</span>';
-    if(cad)cad.innerHTML='<span>Ident</span><span>Type</span><span>ETA</span>';
+    if(cad)cad.innerHTML='<span>Ident</span><span>Type</span><span>ETA</span>'+obH;
     if(cdd)cdd.innerHTML='<span>Ident</span><span>Type</span><span>ETD</span>';
   } else if(VIEW_MODE==='gm'){
     var gmH='<span>Ident</span><span></span><span></span><span>Type</span><span>From / To</span><span>PAX</span><span>Gal <span class="est-tag">est</span></span><span>Cost <span class="est-tag">est</span></span><span>VIP / Spot</span>';
-    if(ca)ca.innerHTML=gmH;
+    var gmObH='<span class="obh" title="Time on base">On base</span>';
+    if(ca)ca.innerHTML=gmH+gmObH;
     if(cd)cd.innerHTML=gmH;
-    if(cad)cad.innerHTML=gmH;
+    if(cad)cad.innerHTML=gmH+gmObH;
     if(cdd)cdd.innerHTML=gmH;
   }
   var pill=document.getElementById('fuelPricePill');
@@ -2618,6 +2673,40 @@ function drawHUD(){
   }).catch(function(){});
 }
 
+// TIME ON BASE (arrivals + arrived): server supplies nextDepartISO (next KSFO ETD for the same aircraft).
+function fmtObDur(mins){
+  mins=Math.max(0,Math.round(mins));
+  if(mins<60)return mins+'m';
+  var h=Math.floor(mins/60),m=mins%60;
+  if(h>=24){var d=Math.floor(h/24);return d+'d '+(h%24)+'h';}
+  return h+'h '+(m<10?'0':'')+m+'m';
+}
+function obState(dep,arr,landed,now){
+  now=now||Date.now();
+  var d=dep?Date.parse(dep):0;
+  if(!d)return {t:'—',c:'ob-none',tip:'No KSFO departure filed'};
+  if(landed){
+    var mins=(d-now)/60000;
+    if(mins>=0)return {t:fmtObDur(mins),c:'ob-gnd',tip:'On base until ETD'};
+    var o=Math.round(-mins),oh=Math.floor(o/60),om=o%60;
+    return {t:'+'+oh+':'+(om<10?'0':'')+om,c:'ob-over',tip:'Past ETD, not yet departed'};
+  }
+  var a=arr?Date.parse(arr):0;
+  if(!a||d<a)return {t:'—',c:'ob-none',tip:'No arrival time to plan ground time'};
+  return {t:fmtObDur((d-a)/60000),c:'ob-plan',tip:'Planned ground time (ETD − ETA)'};
+}
+function obCell(f){
+  var landed=!!(f._landed||f.arrived||f.onGround);
+  var st=obState(f.nextDepartISO,f.arriveISO,landed);
+  var tip=st.tip+(f.nextDepartISO?(' · ETD '+(f.nextDepart||'')+(f.nextDepartTo?(' → '+f.nextDepartTo):'')):'');
+  return '<span class="fob '+st.c+'" data-obd="'+htmlEsc(f.nextDepartISO||'')+'" data-oba="'+htmlEsc(f.arriveISO||'')+'" data-obl="'+(landed?1:0)+'" title="'+htmlEsc(tip)+'">'+st.t+'</span>';
+}
+function refreshObCells(){
+  var els=document.querySelectorAll('.bb .fr>.fob');var now=Date.now();
+  for(var i=0;i<els.length;i++){var e=els[i];var st=obState(e.getAttribute('data-obd'),e.getAttribute('data-oba'),e.getAttribute('data-obl')==='1',now);
+    if(e.textContent!==st.t)e.textContent=st.t;e.className='fob '+st.c;}
+}
+setInterval(refreshObCells,30000);
 function mkRow(f,cls,done){
   var id=safeStr(f.ident);
   var col=getIdentColor(id);
@@ -2696,7 +2785,7 @@ function mkRow(f,cls,done){
     var feL='fe '+(rawEtaL>0&&rawEtaL<=15?'soon':rawEtaL<=60?'mid':'far');
     var cidL=(id).replace(/[^a-zA-Z0-9]/g,'');
     var subL=f.callsign?'<span class="sub">'+callsignSafe+'</span>':'';
-    return '<div class="fr'+(cls==='de'?' dep':'')+(done?(cls==='de'?' dep-simple':' arr-done'):'')+'"><span class="fi zp" data-zp="'+cidL+'">'+idSafe+subL+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+feL+'">'+etaL+'</span></div>';
+    return '<div class="fr'+(cls==='de'?' dep':'')+(done?(cls==='de'?' dep-simple':' arr-done'):'')+'"><span class="fi zp" data-zp="'+cidL+'">'+idSafe+subL+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+feL+'">'+etaL+'</span>'+(cls==='ar'?obCell(f):'')+'</div>';
   }
 
   // ---- GM: FROM/TO, PAX, fuel gal est, cost, VIP / preferCloseSpot hint ----
@@ -2728,7 +2817,7 @@ function mkRow(f,cls,done){
     }
     var subGm=f.callsign?'<span class="sub">'+callsignSafe+'</span>':'';
     var rowClsGm=cls==='de'?(done?' dep-simple':' dep'):(done?' arr-done':'');
-    return '<div class="fr'+rowClsGm+'"><span class="fi zp" data-zp="'+safeGm+'">'+idSafe+subGm+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+medBadge+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="ff">'+fromTo+fromToSub+'</span><span class="pax-ro">'+htmlEsc(String(paxGm))+'</span><span>'+galHtml+'</span><span>'+costHtml+'</span><span>'+vipHtml+'</span></div>';
+    return '<div class="fr'+rowClsGm+'"><span class="fi zp" data-zp="'+safeGm+'">'+idSafe+subGm+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+medBadge+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="ff">'+fromTo+fromToSub+'</span><span class="pax-ro">'+htmlEsc(String(paxGm))+'</span><span>'+galHtml+'</span><span>'+costHtml+'</span><span>'+vipHtml+'</span>'+(cls==='ar'?obCell(f):'')+'</div>';
   }
 
   var departSafe=htmlEsc(f.depart);
@@ -2772,7 +2861,7 @@ function mkRow(f,cls,done){
       var depDoneCell='<span class="fm spot-click" data-plane="'+cidDone+'" style="font-size:9px;font-weight:700;color:var(--cyan);line-height:1.2;cursor:pointer">'+htmlEsc(depDoneSpot)+'</span>';
       var subRowDS=f.callsign?'<span class="sub" style="display:flex;flex-wrap:wrap;align-items:center;gap:3px;flex-basis:100%;width:100%">'+
         callsignSafe+'</span>':'';
-      return '<div class="fr dep-simple'+intlRowCls+'"><span class="fi zp" data-zp="'+cidDone+'">'+idSafe+subRowDS+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+medBadge+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+ffcls+'">'+flag+(flag?' ':'')+(locSafe||'—')+intlBadge+locSub+'</span><span class="fm">'+(departSafe||'—')+'</span><span class="fm">'+etaStr+'</span>'+depDoneCell+'</div>';
+      return '<div class="fr dep-simple'+intlRowCls+'"><span class="fi zp" data-zp="'+cidDone+'">'+idSafe+subRowDS+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+medBadge+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+ffcls+'" title="'+htmlEsc(cityName||'')+'">'+flag+(flag?' ':'')+(locSafe||'—')+intlBadge+locSub+'</span><span class="fm">'+(departSafe||'—')+'</span><span class="fm">'+etaStr+'</span>'+depDoneCell+'</div>';
     }
     // Spot for departure
     var isHD=HELI[f.type]?true:false;
@@ -2782,7 +2871,7 @@ function mkRow(f,cls,done){
     var depSpotCell='<span class="fm spot-click" data-plane="'+cid+'" style="font-size:9px;font-weight:700;color:var(--cyan);line-height:1.2;cursor:pointer">'+htmlEsc(depSpotText)+'</span>';
     var subRowD=f.callsign?'<span class="sub" style="display:flex;flex-wrap:wrap;align-items:center;gap:3px;flex-basis:100%;width:100%">'+
       callsignSafe+'</span>':'';
-    return '<div class="fr dep'+rowCls+intlRowCls+'"><span class="fi zp" data-zp="'+cid+'">'+idSafe+subRowD+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+medBadge+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+ffcls+'">'+flag+(flag?' ':'')+(locSafe||'—')+intlBadge+locSub+'</span><span class="fm">'+(departSafe||'—')+'</span><span class="'+fecls+'">'+etaStr+'</span>'+depSpotCell+'</div>';
+    return '<div class="fr dep'+rowCls+intlRowCls+'"><span class="fi zp" data-zp="'+cid+'">'+idSafe+subRowD+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+medBadge+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+ffcls+'" title="'+htmlEsc(cityName||'')+'">'+flag+(flag?' ':'')+(locSafe||'—')+intlBadge+locSub+'</span><span class="fm">'+(departSafe||'—')+'</span><span class="'+fecls+'">'+etaStr+'</span>'+depSpotCell+'</div>';
   }
   var paxId='ar_'+(id).replace(/[^a-zA-Z0-9]/g,'');
   // PROGRESS BAR - simple logic:
@@ -2830,7 +2919,7 @@ function mkRow(f,cls,done){
   // "on ground" only when actually on the field (landed or ADS-B reports ground) — not merely missing departISO
   var reallyOnGround=!!(f.arrived||f._landed||f.onGround||(typeof f.alt==='number'&&f.alt<=0&&!f.adsbProgress));
   if(cls==='ar'&&!done&&reallyOnGround){
-    etaStr+='<br><span style="font-size:7px;color:var(--t3);font-weight:600;letter-spacing:.3px">on ground</span>';
+    etaStr+='<span class="ongnd"><br><span style="font-size:7px;color:var(--t3);font-weight:600;letter-spacing:.3px">on ground</span></span>';
   }
 
   if(done){
@@ -2852,7 +2941,7 @@ function mkRow(f,cls,done){
     }
     var subRowAD=f.callsign?'<span class="sub" style="display:flex;flex-wrap:wrap;align-items:center;gap:3px;flex-basis:100%;width:100%">'+
       callsignSafe+'</span>':'';
-    return '<div class="fr arr-done'+intlRowCls+'"><span class="fi zp" data-zp="'+safeId3+'">'+idSafe+subRowAD+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+customsBadge+vipBadgeDone+gpuBadgeDone+medBadge+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+ffcls+'">'+flag+(flag?' ':'')+(locSafe||'—')+intlBadge+locSub+'</span><span class="fm">'+(departSafe||'—')+'</span><span class="fm">'+(arriveSafe||'—')+'</span><span class="'+fecls+'">'+etaStr+'</span>'+arrSpotCell+'</div>';
+    return '<div class="fr arr-done'+intlRowCls+'"><span class="fi zp" data-zp="'+safeId3+'">'+idSafe+subRowAD+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+customsBadge+vipBadgeDone+gpuBadgeDone+medBadge+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+ffcls+'" title="'+htmlEsc(cityName||'')+'">'+flag+(flag?' ':'')+(locSafe||'—')+intlBadge+locSub+'</span><span class="fm">'+(departSafe||'—')+'</span><span class="fm">'+(arriveSafe||'—')+'</span><span class="'+fecls+'">'+etaStr+'</span>'+arrSpotCell+'</div>';
   }
   var enRoute=hasDep&&!done&&!f._landed;
   var gd=enRoute?'<span class="live-dot" aria-label="live ADS-B position"></span>':'';
@@ -2942,7 +3031,7 @@ function mkRow(f,cls,done){
   var towHint=rampRec.towNotes?'<span class="ramp-tow" title="'+htmlEsc(rampRec.towNotes)+'">📝</span>':'';
   var editBtn=(VIEW_MODE==='dispatch')?'<button class="ramp-edit-btn" type="button" title="Edit pax / flags / tow notes" onclick="event.stopPropagation();openRampEdit(\''+safeId+'\',\''+idSafe.replace(/'/g,"\\'")+'\')">✎</button>':'';
   var paxHtml=(VIEW_MODE==='dispatch')?('<input class="pax" type="number" min="0" max="99" placeholder="—" id="pax_'+paxId+'" data-plane="'+safeId+'" value="'+htmlEsc(String(paxVal))+'" oninput="event.stopPropagation();schedulePaxSave(this)" onclick="event.stopPropagation()" />'):('<span class="pax-ro">'+htmlEsc(String(paxVal||'—'))+'</span>');
-  return '<div class="fr'+rowCls+flashClass+intlRowCls+(f.divertTo?' divert-row':'')+'"><span class="fi zp" data-zp="'+safeId+'">'+gd+idSafe+subRow+depBadgeHtml+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+customsBadge+divertBadge+qtBadge+vipBadge+gpuBadge+medBadge+customFlagsHtml+towHint+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+ffcls+'">'+flag+(flag?' ':'')+(locSafe||'—')+intlBadge+locSub+'</span><span class="fm">'+(departSafe||'—')+'</span><span class="fm">'+(arriveSafe||'—')+'</span><span class="'+fecls+'">'+etaStr+'</span>'+spotCell+'<span class="pax-cell">'+paxHtml+editBtn+'</span></div>';
+  return '<div class="fr'+rowCls+flashClass+intlRowCls+(f.divertTo?' divert-row':'')+'"><span class="fi zp" data-zp="'+safeId+'">'+gd+idSafe+subRow+depBadgeHtml+'</span><span class="fop">'+opBadge+'</span><span class="fst">'+customsBadge+divertBadge+qtBadge+vipBadge+gpuBadge+medBadge+customFlagsHtml+towHint+'</span><span class="ft" style="line-height:1.1">'+(typeCodeSafe||'—')+typeSub+'</span><span class="'+ffcls+'" title="'+htmlEsc(cityName||'')+'">'+flag+(flag?' ':'')+(locSafe||'—')+intlBadge+locSub+'</span><span class="fm">'+(departSafe||'—')+'</span><span class="fm">'+(arriveSafe||'—')+'</span><span class="'+fecls+'">'+etaStr+'</span>'+spotCell+'<span class="pax-cell">'+paxHtml+editBtn+'</span>'+obCell(f)+'</div>';
 }
 
 var MODEL_MAKERS=/^(Gulfstream Aerospace|Gulfstream|Cessna|Textron|Bombardier|Embraer|Dassault Falcon|Dassault|Piper|Beechcraft|Beech|Raytheon|Cirrus|Pilatus|Hawker Beechcraft|Hawker|Honda|Daher|Socata|Mooney|Diamond|Israel Aircraft Industries|IAI|Airbus Helicopters|Eurocopter|Sikorsky|Robinson|Bell)\s+/i;

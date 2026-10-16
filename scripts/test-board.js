@@ -94,7 +94,18 @@ function batch(list) {
     const d = [...S.movements.departures.values()].find(f => f.ident === 'N88WR');
     assert(d && d.departed === true, 'track → departed');
   }
-  console.log('next-leg / SMO / rehydrate / amend / traj-ETA / repair / track-departed OK');
+  { // TIME ON BASE: arrival matched to the same aircraft's next KSFO ETD (callsign ↔ tail)
+    S.handleSwimMsg(batch([{ acid: 'KOW883', dep: 'KSFO', arr: 'KTEB', msgType: 'flightPlanInformation', etd: iso(150), eta: iso(450), type: 'CL30', reg: 'N883TR' }]), 'tfms');
+    const a = await S.buildBoard('arrivals');
+    const r = a.find(f => f.ident === 'N883TR');
+    assert(r && r.nextDepartISO, 'no nextDepartISO for N883TR');
+    assert.strictEqual(Math.round((Date.parse(r.nextDepartISO) - Date.now()) / 60000), 150);
+    assert.strictEqual(r.nextDepartTo, 'KTEB');
+    const v = a.find(f => /VIO/.test(f.ident));
+    assert(v && v.nextDepartISO === '', 'unfiled departure must be empty');
+    console.log('on-base', r.ident, r.arrive, '→ ETD', r.nextDepart, r.nextDepartTo);
+  }
+  console.log('next-leg / SMO / rehydrate / amend / traj-ETA / repair / track-departed / on-base OK');
   // 3) ADS-B evidence geometry
   const SFO = [37.6213, -122.3790];
   function pt(brgFromField, distNm) { // position at bearing/dist from SFO
