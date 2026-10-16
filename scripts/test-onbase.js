@@ -26,5 +26,14 @@ const iso = m => new Date(Date.now() + m * 60000).toISOString();
   assert.strictEqual(nd('N183QS').to, 'KVNY', 'frac callsign↔tail');
   assert.strictEqual(nd('N111AA'), null, 'ETD before ETA must not match');
   assert.strictEqual(nd('N222BB').to, 'KBUR', 'overdue still matched');
+  // Stale: ETD 5h ago, never departed -> skipped in favour of the next leg (or none)
+  S.movements.arrivals.set('N333CC', { ident: 'N333CC', arrived: true, arriveISO: iso(-400), landedAt: Date.now() - 400 * 60000 });
+  S.movements.departures.set('N333CC', { ident: 'N333CC', from: 'KSFO', to: 'KSTS', departISO: iso(-300) });
+  S.movements.arrivals.set('N444DD', { ident: 'N444DD', arrived: true, arriveISO: iso(-400), landedAt: Date.now() - 400 * 60000 });
+  S.movements.departures.set('N444DD', { ident: 'N444DD', from: 'KSFO', to: 'KSTS', departISO: iso(-300) });
+  S.movements.departures.set('N444DD-2', { ident: 'N444DD', from: 'KSFO', to: 'KRNO', departISO: iso(90) });
+  { const idx2 = S.buildDepartureIndex();
+    assert.strictEqual(S.nextDepartureFor(S.movements.arrivals.get('N333CC'), 'N333CC', idx2), null, 'stale ETD not shown as overdue');
+    assert.strictEqual(S.nextDepartureFor(S.movements.arrivals.get('N444DD'), 'N444DD', idx2).to, 'KRNO', 'stale leg skipped for next leg'); }
   console.log('ON BASE matcher OK'); process.exit(0);
 })().catch(e => { console.error('FAIL', e); process.exit(1); });

@@ -3473,7 +3473,9 @@ function buildDepartureIndex() {
   });
   return idx;
 }
+var ON_BASE_STALE_MS = 3 * 3600000;
 function nextDepartureFor(f, key, idx) {
+  var nowMs = Date.now();
   var landed = !!(f.arrived || f.onGround);
   var arrMs = Date.parse(f.arriveISO || '') || 0;
   var refMs = landed ? (f.landedAt || arrMs || Date.now()) : arrMs;
@@ -3483,6 +3485,9 @@ function nextDepartureFor(f, key, idx) {
     (idx.get(n) || []).forEach(function (d) {
       var dm = Date.parse(d.departISO) || 0;
       if (!dm || dm < refMs - 5 * 60000) return; // must be after this arrival
+      // An ETD more than ON_BASE_STALE_MS in the past with no wheels-off is a stale schedule
+      // (the DEPARTURES section already drops it after 5 min); don't show it as hours overdue.
+      if (dm < nowMs - ON_BASE_STALE_MS) return;
       if (!best || dm < bestMs) { best = d; bestMs = dm; }
     });
   });

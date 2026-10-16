@@ -2684,7 +2684,7 @@ function fmtObDur(mins){
 function obState(dep,arr,landed,now){
   now=now||Date.now();
   var d=dep?Date.parse(dep):0;
-  if(!d)return {t:'—',c:'ob-none',tip:'No KSFO departure filed'};
+  if(!d)return {t:'—',c:'ob-none',tip:'No upcoming KSFO departure filed'};
   if(landed){
     var mins=(d-now)/60000;
     if(mins>=0)return {t:fmtObDur(mins),c:'ob-gnd',tip:'On base until ETD'};
