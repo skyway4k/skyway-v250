@@ -1722,22 +1722,7 @@ function ingestSwimFlightBlock(block, feedLabel) {
   swimDiag.msgTypes[msgTypeRaw || '(none)'] = (swimDiag.msgTypes[msgTypeRaw || '(none)'] || 0) + 1;
   var srcTs = parseIsoLoose(xmlAttr(block, 'sourceTimeStamp'));
   // TFMS flight instance id: one per leg (EJA454 SFO→HHR and HHR→SFO have different flightRefs).
-  var legRef = xmlAttr(block, 'flightRef') || xval(block, 'gufi') || '';
-  var isTrackMsg = msgType === 'trackinformation';
-  // Filed-plan messages repeat the ORIGINAL igtd/ETA; they must not overwrite live/actual times.
-  var filedOnlyMsg = /^(flightplaninformation|flightplanamendmentinformation|flightcreate|flightscheduleactivate|boundarycrossingupdate)$/.test(msgType);
-  function firstTimeTag(re) { var mm = block.match(re); return mm ? parseIsoLoose(mm[1].trim()) : null; }
-  var actEtdOpen = (block.match(/<(?:\w+:)?etd\b[^>]*etdType="ACTUAL"[^>]*>/i) || [])[0] || '';
-  var actEtaOpen = (block.match(/<(?:\w+:)?eta\b[^>]*etaType="ACTUAL"[^>]*>/i) || [])[0] || '';
-  var actDepTime = parseIsoLoose(xmlAttr(actEtdOpen, 'timeValue')) ||
-    firstTimeTag(/<(?:\w+:)?timeOfDeparture\b(?![^>]*estimated="true")[^>]*>([^<]+)</i) ||
-    parseIsoLoose(xval(block, 'actualDepartureTime', 'actualTakeOffTime', 'actualOffBlockTime'));
-  var actArrTime = parseIsoLoose(xmlAttr(actEtaOpen, 'timeValue')) ||
-    firstTimeTag(/<(?:\w+:)?timeOfArrival\b(?![^>]*estimated="true")[^>]*>([^<]+)</i) ||
-    parseIsoLoose(xval(block, 'actualArrivalTime', 'actualLandingTime', 'actualInBlockTime'));
-  // departureInformation / arrivalInformation are emitted at the event itself.
-  if (!actDepTime && msgType === 'departureinformation' && srcTs) actDepTime = srcTs;
-  if (!actArrTime && msgType === 'arrivalinformation' && srcTs) actArrTime = srcTs;
+  var legRef = xmlAttr(block, 'flightRef') || '';
   if (srcTs) {
     var lag = Math.round((Date.now() - Date.parse(srcTs)) / 1000);
     swimDiag.lastLagSec = lag;
@@ -1873,7 +1858,32 @@ function ingestSwimFlightBlock(block, feedLabel) {
     return true;
   }
 
+  // A queued next leg that TFMS now files somewhere else is dropped.
+  var altArrKey = key + NEXT_LEG_SUFFIX;
+  if (dest && !airportMatch(dest, AIRPORT_ICAO) && movements.arrivals.has(altArrKey)) {
+    var altRow = movements.arrivals.get(altArrKey);
+    if ((legRef && altRow.legRef === legRef) || (!legRef && orig && airportMatch(orig, altRow.from))) {
+      movements.arrivals.delete(altArrKey); persistDirty = true; diag('queued-leg-dest-changed:' + dest); return true;
+    }
+  }
   if (!touchesHome) return false;
+  // (Parsed only for KSFO-touching GA blocks: the free instance has very little CPU.)
+  if (!legRef) legRef = xval(block, 'gufi') || '';
+  var isTrackMsg = msgType === 'trackinformation';
+  // Filed-plan messages repeat the ORIGINAL igtd/ETA; they must not overwrite live/actual times.
+  var filedOnlyMsg = /^(flightplaninformation|flightplanamendmentinformation|flightcreate|flightscheduleactivate|boundarycrossingupdate)$/.test(msgType);
+  function firstTimeTag(re) { var mm = block.match(re); return mm ? parseIsoLoose(mm[1].trim()) : null; }
+  var actEtdOpen = (block.match(/<(?:\w+:)?etd\b[^>]*etdType="ACTUAL"[^>]*>/i) || [])[0] || '';
+  var actEtaOpen = (block.match(/<(?:\w+:)?eta\b[^>]*etaType="ACTUAL"[^>]*>/i) || [])[0] || '';
+  var actDepTime = parseIsoLoose(xmlAttr(actEtdOpen, 'timeValue')) ||
+    firstTimeTag(/<(?:\w+:)?timeOfDeparture\b(?![^>]*estimated="true")[^>]*>([^<]+)</i) ||
+    parseIsoLoose(xval(block, 'actualDepartureTime', 'actualTakeOffTime', 'actualOffBlockTime'));
+  var actArrTime = parseIsoLoose(xmlAttr(actEtaOpen, 'timeValue')) ||
+    firstTimeTag(/<(?:\w+:)?timeOfArrival\b(?![^>]*estimated="true")[^>]*>([^<]+)</i) ||
+    parseIsoLoose(xval(block, 'actualArrivalTime', 'actualLandingTime', 'actualInBlockTime'));
+  // departureInformation / arrivalInformation are emitted at the event itself.
+  if (!actDepTime && msgType === 'departureinformation' && srcTs) actDepTime = srcTs;
+  if (!actArrTime && msgType === 'arrivalinformation' && srcTs) actArrTime = srcTs;
 
   function rememberIfKsfo(boardHint) {
     rememberTfmsPlan(key, {
@@ -1903,14 +1913,6 @@ function ingestSwimFlightBlock(block, feedLabel) {
     });
     upsertMovement('arrivals', key, patch);
     return true;
-  }
-  // A queued next leg that TFMS now files somewhere else is dropped.
-  var altArrKey = key + NEXT_LEG_SUFFIX;
-  if (dest && !airportMatch(dest, AIRPORT_ICAO) && movements.arrivals.has(altArrKey)) {
-    var altRow = movements.arrivals.get(altArrKey);
-    if ((legRef && altRow.legRef === legRef) || (!legRef && orig && airportMatch(orig, altRow.from))) {
-      movements.arrivals.delete(altArrKey); persistDirty = true; diag('queued-leg-dest-changed:' + dest); return true;
-    }
   }
 
 
@@ -1973,6 +1975,9 @@ function ingestSwimFlightBlock(block, feedLabel) {
           var actOpen = (block.match(/<(?:\w+:)?etd\b[^>]*etdType="ACTUAL"[^>]*>/i) || [])[0] || '';
           var actDep = parseIsoLoose(xmlAttr(actOpen, 'timeValue') || xval(block, 'actualDepartureTime', 'actualOffBlockTime', 'actualTakeOffTime')) || actDepTime;
           depPatch.departed = true;
+          // No actual time in the message: the first track arrives within minutes of wheels-off, so a
+          // filed igtd far from the track's own timestamp is not the departure time.
+          if (!actDep && srcTs && (!etd || Math.abs(Date.parse(etd) - Date.parse(srcTs)) > 20 * 60000)) actDep = srcTs;
           if (actDep) { depPatch.departISO = actDep; depPatch.depart = fmtTimeLA(actDep); depPatch.departActual = true; }
           if (swimTrackDepSamples.length < 3) swimTrackDepSamples.push(String(block).slice(0, 4000));
         }
@@ -2956,6 +2961,10 @@ function removeLandedArrivalOnDeparture(key, patch) {
     if (!f || isQueuedLegKey(arrivalKey)) return;
     var arrivalMs = f.arriveISO ? Date.parse(f.arriveISO) : 0;
     if (!f.arrived && !f.onGround && !(arrivalMs && arrivalMs <= Date.now())) return;
+    // A departure from BEFORE this landing (this morning's SFO→X, kept on DEPARTED for hours) is
+    // not this aircraft leaving again. 60 min slack: departed rows may still carry the filed igtd.
+    var depMsR = Date.parse((patch && patch.departISO) || '') || 0, landMsR = arrLandedMs(f);
+    if (depMsR && landMsR && depMsR < landMsR - 60 * 60000) return;
     var matches = candidates.indexOf(arrivalKey) >= 0;
     if (!matches) {
       var vals = [f.ident, f.reg, f.callsign];
