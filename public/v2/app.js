@@ -180,7 +180,7 @@
       // decide on the client clock so the cell flips exactly at ETD
       var m = (t(o.toISO) - now) / MIN;
       if (m >= 0) { v = dur(m); sub = 'to ETD'; c = m <= 30 ? 'ob-soon' : 'ob-cd'; }
-      else if (m >= -180) { v = hmOver(-m); sub = 'past ETD'; c = 'ob-late'; }
+      else if (m >= -180) { v = hmOver(-m); sub = 'late'; c = 'ob-late'; }
       else { sub = sec === 'onGround' ? 'no ETD' : ''; }
     }
     else if (o.mode === 'planned') { v = dur((t(o.toISO) - t(o.fromISO)) / MIN); sub = 'plan'; c = 'ob-plan'; }
