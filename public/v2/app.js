@@ -222,7 +222,7 @@
   function stCell(r) {
     var c = r.conf || {};
     var fresh = c.liveAgeSec != null && c.liveAgeSec < 600 ? 'live ' + ago(c.liveAgeSec) : c.updatedAgoSec != null ? ago(c.updatedAgoSec) + ' old' : '';
-    return cell('c-st', '<b><span class="chip st s-' + esc(r.status.code) + '">' + esc(stLabel(r)) + (r.status.est ? '?' : '') + '</span></b><small title="' + esc(c.note || '') + '">' + esc(c.src || '') + (fresh ? ' · ' + fresh : '') + '</small>');
+    return cell('c-st', '<b><span class="chip st s-' + esc(r.status.code) + '">' + esc(stLabel(r)) + (r.status.est ? '?' : '') + '</span></b><small title="' + esc(c.note || '') + '">' + esc(String(c.src || '').replace('FAA plan + ADS-B', 'FAA+ADS-B').replace('FAA plan, no time', 'FAA, no time')) + (fresh ? ' · ' + fresh : '') + '</small>');
   }
   function spCell(r, sec) {
     var canEdit = S.data.role.edit.indexOf('spot') >= 0 && sec !== 'departed' && !r.ladd;
@@ -428,6 +428,11 @@
         shown++;
         var col = hit.sec === 'arrivals' ? '#4ade80' : hit.sec === 'departures' || hit.sec === 'departed' ? '#60a5fa' : '#2dd4bf';
         var rot = s[10] || 0, ft = s[7] != null ? Math.round(s[7] * 3.28084 / 100) * 100 : null;
+        var onGnd = !!s[8] || (ft != null && ft <= 100);
+        if (onGnd) { // parked/taxiing at KSFO: small dot, label on hover only (labels would pile up)
+          L.circleMarker([s[6], s[5]], { radius: 4, color: col, weight: 1, fillOpacity: .9 }).addTo(S.mapLayer).bindTooltip(esc(hit.r.ident) + ' ' + esc(hit.r.type || '') + ' · on ground');
+          return;
+        }
         var icon = L.divIcon({ className: '', iconSize: [120, 22], iconAnchor: [9, 11], html: '<div style="display:flex;align-items:center;gap:3px;white-space:nowrap"><svg width="18" height="18" viewBox="0 0 24 24" style="transform:rotate(' + rot + 'deg)"><path fill="' + col + '" stroke="#000" stroke-width=".8" d="M12 2l1.6 7.2L21 13v2l-7.4-2.2-.6 5.2 2.5 1.8V21L12 20l-3.5 1v-1.2L11 18l-.6-5.2L3 15v-2l7.4-3.8z"/></svg><span style="font:700 11px/1 -apple-system,Segoe UI,sans-serif;color:' + col + ';text-shadow:0 0 3px #000,0 0 3px #000">' + esc(hit.r.ident) + '</span></div>' });
         L.marker([s[6], s[5]], { icon: icon }).addTo(S.mapLayer).bindTooltip(esc(hit.r.ident) + ' ' + esc(hit.r.type || '') + (ft != null ? ' · ' + ft + ' ft' : '') + (s[9] != null ? ' · ' + Math.round(s[9] * 1.94384) + ' kt' : ''));
       });
