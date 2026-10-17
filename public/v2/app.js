@@ -544,7 +544,7 @@
     sh.querySelectorAll('[data-setspot]').forEach(function (b) {
       b.onclick = function () {
         var name = b.getAttribute('data-setspot'), prev = r.spot || '';
-        saveRamp(r.id, { spot: name }, function () { toast(name ? r.ident + ' → ' + name : r.ident + ' spot cleared', function () { saveRamp(r.id, { spot: prev }); }); });
+        saveRamp(r.rampId || r.id, { spot: name }, function () { toast(name ? r.ident + ' → ' + name : r.ident + ' spot cleared', function () { saveRamp(r.rampId || r.id, { spot: prev }); }); });
       };
     });
     var pax = $('#pax');
@@ -562,7 +562,7 @@
     if (sv) sv.onclick = function () {
       var flags = Object.keys(fl).map(function (k) { return fl[k] === 'done' ? k + ' ✓' : k; });
       var pv = pax.value === '' ? null : Math.max(0, Math.min(99, parseInt(pax.value, 10) || 0));
-      saveRamp(r.id, { pax: pv, flags: flags, towNotes: $('#tow').value }, function () { toast('Saved ' + r.ident); });
+      saveRamp(r.rampId || r.id, { pax: pv, flags: flags, towNotes: $('#tow').value }, function () { toast('Saved ' + r.ident); });
     };
   }
   function rampKey() { try { return localStorage.getItem(KEY_LS) || ''; } catch (e) { return S.keyMem || ''; } }
@@ -576,7 +576,7 @@
         if (r.status === 503) { toast('Ramp edits are disabled on the server'); return; }
         if (!r.ok) return r.json().then(function (j) { toast('Not saved: ' + (j.error || r.status)); });
         return r.json().then(function (saved) {
-          ['arrivals', 'onGround', 'departures', 'departed'].forEach(function (s) { (S.data.sections[s] || []).forEach(function (row) { if (row.id === id) { Object.keys(fields).forEach(function (f) { row[f] = saved[f] !== undefined ? saved[f] : fields[f]; }); } }); });
+          ['arrivals', 'onGround', 'departures', 'departed'].forEach(function (s) { (S.data.sections[s] || []).forEach(function (row) { if ((row.rampId || row.id) === id) { Object.keys(fields).forEach(function (f) { row[f] = saved[f] !== undefined ? saved[f] : fields[f]; }); } }); });
           render(); if (ok) ok(); loadSoon();
         });
       }).catch(function (e) { toast('Not saved: ' + e.message); });
