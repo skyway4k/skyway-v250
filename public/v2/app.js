@@ -106,7 +106,7 @@
   function secShell(k, cls, title) {
     return '<section class="sec ' + cls + '" id="sec-' + k + '"><div class="sec-h"><h2>' + title + '</h2><span class="n" id="n-' + k + '">–</span><span class="hint" id="h-' + k + '"></span></div>' +
       colHead(k) + '<div class="rows" id="rows-' + k + '"></div>' +
-      (k === 'onGround' ? '<details class="older" id="older"><summary id="older-s"></summary><div class="rows" id="rows-older"></div></details>' : '') + '</section>';
+      (k === 'onGround' ? '<details class="older" id="older" style="display:none"><summary id="older-s"></summary><div class="rows" id="rows-older"></div></details>' : '') + '</section>';
   }
   function colHead(k) {
     var tm = k === 'arrivals' ? 'ETA' : k === 'onGround' ? 'Landed' : k === 'departures' ? 'ETD' : 'Off';
