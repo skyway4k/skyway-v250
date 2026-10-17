@@ -726,6 +726,8 @@ async function handleAdsbStates(query, res) {
 // Applied to ADS-B, SWIM/TFMS, and OpenSky /flights so boards stay GA/biz-heavy.
 // ============================================================================================
 var AIRLINE_CS = new Set(('UAL AAL DAL SWA ASA JBU NKS FFT SKW EDV RPA ASH ENY QXE HAL CPA BAW AFR DLH UAE CSG CCA CES CSN CHH CES FDX UPS GTI ATN ABX GTI VRD SCX WOA UAL CKS MPO JSX AMX ACA WJA ROU TSC LOT AVA FBU JAL ANA KAL AAR EVA SIA QFA ANZ CAL CSH CXA HVN PAL VIR KLM SWR AUA SAS FIN ICE EIN TAP IBE AZA ETD QTR THY ELY ETH TAM LAN LPE ARG CMP VOI VIV AIJ FJI HKE CRK TGW MXY VXP FLE AAY SCX SKV PDT CPZ GJS JIA').split(/\s+/));
+// Regional carriers that fly CRJs under their own callsigns (kept off the GA board).
+var REGIONAL_CS = new Set('SKW ASA EDV RPA ASH ENY QXE JIA GJS CPZ PDT AWI JZA UCA LOF KAP CJC MES TCF FLG BTA CHQ'.split(' '));
 var FRAC_CS = /^(EJA|EJM|LXJ|TWY|JTL|XOJ|OPT|JRE|GTT|DPJ|VJT|GAJ|HRT|TIV|LNJ|CVC|CRE|QQE)/;
 // Small/mid/large-cabin bizjets, turboprops and piston GA. Large-cabin Gulfstream/Global
 // (GLF4/5/6, GL5T/GL7T/GL8T, GLEX) are in because FlightAware's KSFO GA list carries them.
@@ -734,6 +736,14 @@ function isGaBizTraffic(flight, reg, typeCode) {
   var cs = String(flight || '').trim().toUpperCase();
   var r = String(reg || '').trim().toUpperCase();
   var t = String(typeCode || '').trim().toUpperCase();
+  // Part 91 / charter CRJs (N269ZR CRJ2) are on FlightAware's KSFO GA list: allow CRJ1/2/7/9
+  // only when the callsign is the N-number or a non-airline operator (never SKW/UAL/ASA/…).
+  if (/^CRJ[1279]$/.test(t)) {
+    if (isNRegIdent(cs)) return true;
+    if (!cs && r.charAt(0) === 'N' && r.length > 1 && r.charAt(1) >= '0' && r.charAt(1) <= '9') return true;
+    if (cs && /^[A-Z]{3}\d/.test(cs) && !AIRLINE_CS.has(cs.substring(0, 3)) && !REGIONAL_CS.has(cs.substring(0, 3))) return true;
+    return false;
+  }
   // Airliners / heavies are never KSFO GA board traffic even on N-reg.
   if (/^(A318|A319|A320|A321|A19N|A20N|A21N|A332|A333|A339|A359|A35K|A388|B71|B72|B73|B74|B75|B76|B77|B78|B37M|B38M|B39M|CRJ|E17|E19|E75|E29|BCS|MD8|MD9|DH8)/.test(t)) return false;
   if (cs && AIRLINE_CS.has(cs.substring(0, 3))) return false;
@@ -1481,7 +1491,157 @@ function clearTfmsPlanSide(key, board) {
   });
   persistDirty = true;
 }
+// ------------------------------------------------------------------------------------------
+// Arrival LEGS. One aircraft can fly several legs into KSFO in a day (N454QS: landed 15:12,
+// out SFO→HHR 17:35, back HHR→SFO 21:38). The board row is keyed by aircraft, so a message for
+// a different leg must never be merged into the current row (that produced "dep 21:30 arr 15:12
+// landed"). A leg is identified by the TFMS flightRef/gufi, or by origin + ETD relative to the
+// row's landing. A later leg waits in a queued row (<key>~NEXT) until the current one is done.
+// ------------------------------------------------------------------------------------------
+var NEXT_LEG_SUFFIX = '~NEXT';
+var LAND_INFER_GRACE_MS = 30 * 60000;   // filed ETA this far past with no live track → landed
+var TRACK_LIVE_MS = 6 * 60000;          // TFMS trackInformation arrives ~1/min while airborne
+function isQueuedLegKey(k) { return typeof k === 'string' && k.slice(-NEXT_LEG_SUFFIX.length) === NEXT_LEG_SUFFIX; }
+function arrIsLanded(f) { return !!(f && (f.arrived || f.onGround)); }
+// Landed only by inference (ETA passed, track ended) — TFMS can still prove it airborne.
+function arrLandInferred(f) { return !!(f && !f.arrived && (f.landInferred || f.onGround)); }
+function arrLandedMs(f) { return (f && (f.landedAt || Date.parse(f.arriveISO || ''))) || 0; }
+function sameArrivalLeg(row, legRef, orig, etdMs) {
+  if (!row) return false;
+  if (legRef && row.legRef) {
+    if (legRef === row.legRef) return true;
+    if (arrIsLanded(row)) return false;
+  }
+  if (orig && row.from && !airportMatch(orig, row.from)) return false;
+  if (arrIsLanded(row)) {
+    var lm = arrLandedMs(row);
+    // Leaves its origin after this row already landed at KSFO → it is the aircraft's next leg.
+    if (etdMs && lm && etdMs > lm + 10 * 60000) return false;
+  }
+  return true;
+}
+function retireArrivalRow(key) {
+  if (!movements.arrivals.has(key)) return;
+  movements.arrivals.delete(key);
+  delete groundCache[key];
+  clearTfmsPlanSide(key, 'arrivals');
+  persistDirty = true;
+}
+// Which arrivals row a KSFO-inbound TFMS message belongs to: the aircraft row (key), the queued
+// next-leg row (key~NEXT), or null (an out-of-date message for a leg already superseded).
+function arrivalLegTarget(key, legRef, orig, etd, eta) {
+  var m = movements.arrivals, now = Date.now();
+  var altKey = key + NEXT_LEG_SUFFIX;
+  var base = m.get(key), alt = m.get(altKey);
+  var etdMs = Date.parse(etd || '') || 0, etaMs = Date.parse(eta || '') || 0;
+  if (!base && alt) { m.delete(altKey); alt.queuedLeg = false; m.set(key, alt); base = alt; alt = null; }
+  if (!base) return key;
+  if (sameArrivalLeg(base, legRef, orig, etdMs)) return key;
+  if (alt && sameArrivalLeg(alt, legRef, orig, etdMs)) return altKey;
+  if (arrIsLanded(base)) {
+    var lm = arrLandedMs(base);
+    if (etdMs && lm && etdMs < lm - 10 * 60000 && (!etaMs || etaMs <= lm + 10 * 60000)) return null; // an earlier leg
+    if (etdMs && etdMs <= now) { retireArrivalRow(key); return key; } // it has already left KSFO
+    if (alt) {
+      var altDep = Date.parse(alt.departISO || '') || 0;
+      if (etdMs && altDep && etdMs > altDep) return null; // a third leg: picked up once the next one lands
+    }
+    return altKey;
+  }
+  // Current row is a different scheduled/inbound leg: the earlier leg owns the aircraft row.
+  var baseT = Date.parse(base.departISO || '') || Date.parse(base.arriveISO || '') || 0;
+  var newT = etdMs || etaMs;
+  if (newT && baseT && newT < baseT && !base.airborne) {
+    if (!alt) { m.delete(key); base.queuedLeg = true; m.set(altKey, base); return key; }
+    return null;
+  }
+  if (!alt) return altKey;
+  return null;
+}
+function writeQueuedArrival(altKey, patch) {
+  var m = movements.arrivals, ex = m.get(altKey) || {};
+  var merged = Object.assign({}, ex);
+  Object.keys(patch || {}).forEach(function (k) {
+    var v = patch[k];
+    if (v === undefined || v === null) return;
+    if (v === '' && merged[k]) return;
+    merged[k] = v;
+  });
+  if (!merged.to) merged.to = AIRPORT_ICAO;
+  merged.queuedLeg = true;
+  delete merged.liveEta;
+  merged.lastUpdate = Date.now();
+  m.set(altKey, merged);
+  persistDirty = true;
+}
+// Amended / actual times overwrite filed ones; filed ones never overwrite actual / live ones.
+function guardArrivalTimes(row, patch, ctx) {
+  var now = Date.now();
+  var trackLive = !!(row && row.lastTrackAt && now - row.lastTrackAt < 20 * 60000);
+  if (ctx.actDep) {
+    patch.departISO = ctx.actDep; patch.depart = fmtTimeLA(ctx.actDep); patch.departActual = true; patch.airborne = true;
+  } else if (row && row.departActual) {
+    delete patch.departISO; delete patch.depart;
+  } else if (ctx.filedOnly && trackLive) {
+    delete patch.departISO; delete patch.depart;
+  }
+  if ((trackLive || (row && row.departActual)) && ctx.filedOnly) { delete patch.arriveISO; delete patch.arrive; }
+  if (ctx.isTrack) { patch.lastTrackAt = now; patch.airborne = true; }
+  if (!ctx.filedOnly && patch.arriveISO) patch.liveEta = true; // TFMS-modelled (not filed) ETA
+  return patch;
+}
+// Promote a queued next leg once the current row is finished (removed, or landed and the next
+// leg has left its origin / is airborne / has landed).
+function promoteQueuedLegs() {
+  var m = movements.arrivals, now = Date.now(), changed = false;
+  Array.from(m.keys()).forEach(function (k) {
+    if (!isQueuedLegKey(k)) return;
+    var alt = m.get(k);
+    var bk = k.slice(0, -NEXT_LEG_SUFFIX.length);
+    var canon = identAliases.get(bk) || bk;
+    var base = m.get(canon) || m.get(bk);
+    var altEta = Date.parse(alt && alt.arriveISO || '') || 0;
+    if (!alt || (altEta && now - altEta > 12 * 3600000)) { m.delete(k); changed = true; return; }
+    var altDep = Date.parse(alt.departISO || '') || 0;
+    var go = !base;
+    if (base && arrIsLanded(base) && (alt.arrived || alt.airborne || (alt.lastTrackAt && now - alt.lastTrackAt < TRACK_LIVE_MS) || (altDep && altDep <= now))) {
+      retireArrivalRow(m.has(canon) ? canon : bk);
+      go = true;
+    }
+    if (!go) return;
+    m.delete(k);
+    alt.queuedLeg = false;
+    m.set(canon, alt);
+    rememberTfmsPlan(canon, { ident: alt.ident || canon, callsign: alt.callsign || '', reg: alt.reg || '', type: alt.type || '', from: alt.from || '', to: alt.to || AIRPORT_ICAO, arriveISO: alt.arriveISO || '', arrive: alt.arrive || '', departISO: alt.departISO || '', depart: alt.depart || '', board: 'arrivals', feed: 'tfms' });
+    changed = true;
+  });
+  if (changed) persistDirty = true;
+  return changed;
+}
+// Repair rows that already mixed two legs before the leg split existed: a landed row whose
+// departure time is AFTER its landing carries the next leg's origin/ETD.
+function repairMixedArrivalLegs() {
+  var m = movements.arrivals, now = Date.now(), fixed = 0;
+  Array.from(m.keys()).forEach(function (k) {
+    if (isQueuedLegKey(k)) return;
+    var f = m.get(k);
+    if (!f || !arrIsLanded(f)) return;
+    var lm = arrLandedMs(f), dms = Date.parse(f.departISO || '') || 0;
+    if (!lm || !dms || dms <= lm + 10 * 60000) return;
+    if (dms < now || airportMatch(f.from, AIRPORT_ICAO)) return; // past: handled by the stale-ground rule
+    var altKey = k + NEXT_LEG_SUFFIX;
+    if (!m.has(altKey)) {
+      writeQueuedArrival(altKey, { ident: f.ident, callsign: f.callsign || '', reg: f.reg || '', type: f.type || '', model: f.model || '', from: f.from || '', to: AIRPORT_ICAO, filedDest: AIRPORT_ICAO, departISO: f.departISO, depart: f.depart || fmtTimeLA(f.departISO), arriveISO: '', arrive: '', arrived: false, source: f.source || 'swim', timeSource: 'swim', etaNote: '', city: f.city, country: f.country, intl: f.intl });
+    }
+    // The landed leg's real origin was overwritten; don't show the next leg's origin on it.
+    f.from = ''; f.departISO = ''; f.depart = ''; f.city = ''; f.country = ''; f.intl = false;
+    fixed++;
+  });
+  if (fixed) { persistDirty = true; log('[board] split ' + fixed + ' arrival row(s) that mixed two legs', 'WARN'); }
+  return fixed;
+}
 var swimRawNoEta = [];
+var swimDepArrSamples = [];
 var swimTrackDepSamples = [];
 var extRegByCallsign = new Map(); // normalized callsign -> registration as broadcast by ADS-B (e.g. 9H-VIO) // last few raw KSFO GA blocks that carried no ETA (to fix parsing)
 function ingestSwimFlightBlock(block, feedLabel) {
@@ -1561,12 +1721,32 @@ function ingestSwimFlightBlock(block, feedLabel) {
   var msgType = msgTypeRaw.toLowerCase();
   swimDiag.msgTypes[msgTypeRaw || '(none)'] = (swimDiag.msgTypes[msgTypeRaw || '(none)'] || 0) + 1;
   var srcTs = parseIsoLoose(xmlAttr(block, 'sourceTimeStamp'));
+  // TFMS flight instance id: one per leg (EJA454 SFO→HHR and HHR→SFO have different flightRefs).
+  var legRef = xmlAttr(block, 'flightRef') || xval(block, 'gufi') || '';
+  var isTrackMsg = msgType === 'trackinformation';
+  // Filed-plan messages repeat the ORIGINAL igtd/ETA; they must not overwrite live/actual times.
+  var filedOnlyMsg = /^(flightplaninformation|flightplanamendmentinformation|flightcreate|flightscheduleactivate|boundarycrossingupdate)$/.test(msgType);
+  function firstTimeTag(re) { var mm = block.match(re); return mm ? parseIsoLoose(mm[1].trim()) : null; }
+  var actEtdOpen = (block.match(/<(?:\w+:)?etd\b[^>]*etdType="ACTUAL"[^>]*>/i) || [])[0] || '';
+  var actEtaOpen = (block.match(/<(?:\w+:)?eta\b[^>]*etaType="ACTUAL"[^>]*>/i) || [])[0] || '';
+  var actDepTime = parseIsoLoose(xmlAttr(actEtdOpen, 'timeValue')) ||
+    firstTimeTag(/<(?:\w+:)?timeOfDeparture\b(?![^>]*estimated="true")[^>]*>([^<]+)</i) ||
+    parseIsoLoose(xval(block, 'actualDepartureTime', 'actualTakeOffTime', 'actualOffBlockTime'));
+  var actArrTime = parseIsoLoose(xmlAttr(actEtaOpen, 'timeValue')) ||
+    firstTimeTag(/<(?:\w+:)?timeOfArrival\b(?![^>]*estimated="true")[^>]*>([^<]+)</i) ||
+    parseIsoLoose(xval(block, 'actualArrivalTime', 'actualLandingTime', 'actualInBlockTime'));
+  // departureInformation / arrivalInformation are emitted at the event itself.
+  if (!actDepTime && msgType === 'departureinformation' && srcTs) actDepTime = srcTs;
+  if (!actArrTime && msgType === 'arrivalinformation' && srcTs) actArrTime = srcTs;
   if (srcTs) {
     var lag = Math.round((Date.now() - Date.parse(srcTs)) / 1000);
     swimDiag.lastLagSec = lag;
     if (lag > swimDiag.maxLagSec) swimDiag.maxLagSec = lag;
   }
   var homeTouch = airportMatch(orig, AIRPORT_ICAO) || airportMatch(dest, AIRPORT_ICAO);
+  if (homeTouch && (msgType === 'departureinformation' || msgType === 'arrivalinformation') && swimDepArrSamples.length < 6 && !/^(UAL|SWA|AAL|DAL|ASA|SKW|JBU)/.test(String(cs || ''))) {
+    swimDepArrSamples.push(String(block).slice(0, 5000));
+  }
   function diag(decision) {
     if (!homeTouch && !/^(dest-changed|divert|other-leg)/.test(decision)) return;
     swimDiagNote({ at: new Date().toISOString(), msgType: msgTypeRaw, acid: cs || '', tail: tail || '', type: acType || '', orig: orig || '', dest: dest || '', eta: eta || '', etaFrom: etaFromTraj ? 'igtd+trajectory' : (eta ? 'tfms-eta' : ''), etd: etd || '', src: srcTs || '', decision: decision });
@@ -1704,43 +1884,75 @@ function ingestSwimFlightBlock(block, feedLabel) {
       board: boardHint, feed: feedLabel || 'tfms'
     });
   }
+  // Every KSFO-inbound write goes through here: picks the right LEG row, applies the
+  // actual-over-filed time rules, then stores the plan and the row.
+  function writeArrival(patch) {
+    var tgt = arrivalLegTarget(key, legRef, orig, patch.departISO || etd, patch.arriveISO || eta);
+    if (!tgt) { diag('stale-leg-ignored:' + (orig || '?')); return false; }
+    var cur = movements.arrivals.get(tgt) || null;
+    guardArrivalTimes(cur, patch, { actDep: patch.departActual ? patch.departISO : (actDepTime && (type === 'DEPARTURE' || type === 'FLIGHT_PLAN' || type === 'UNKNOWN') ? actDepTime : null), filedOnly: filedOnlyMsg, isTrack: isTrackMsg });
+    if (legRef) patch.legRef = legRef;
+    if (isQueuedLegKey(tgt)) { writeQueuedArrival(tgt, patch); return true; }
+    var pa = patch.arriveISO !== undefined ? patch.arriveISO : '', pd = patch.departISO !== undefined ? patch.departISO : '';
+    rememberTfmsPlan(key, {
+      ident: ident, callsign: cs || '', reg: tail || '', type: acType || '',
+      from: orig || '', to: dest || '',
+      arriveISO: pa || '', arrive: pa ? fmtTimeLA(pa) : '',
+      departISO: pd || '', depart: pd ? fmtTimeLA(pd) : '',
+      board: 'arrivals', feed: feedLabel || 'tfms'
+    });
+    upsertMovement('arrivals', key, patch);
+    return true;
+  }
+  // A queued next leg that TFMS now files somewhere else is dropped.
+  var altArrKey = key + NEXT_LEG_SUFFIX;
+  if (dest && !airportMatch(dest, AIRPORT_ICAO) && movements.arrivals.has(altArrKey)) {
+    var altRow = movements.arrivals.get(altArrKey);
+    if ((legRef && altRow.legRef === legRef) || (!legRef && orig && airportMatch(orig, altRow.from))) {
+      movements.arrivals.delete(altArrKey); persistDirty = true; diag('queued-leg-dest-changed:' + dest); return true;
+    }
+  }
 
 
-  if (type === 'ARRIVAL' && airportMatch(dest, AIRPORT_ICAO)) {
+  if (type === 'ARRIVAL' && airportMatch(dest, AIRPORT_ICAO) && !airportMatch(orig, AIRPORT_ICAO)) {
     if (!isoWithinTodayPT(eta || etd)) { diag('beyond-horizon'); return did; }
     swimStats.arrivals++;
-    rememberIfKsfo('arrivals');
-    upsertMovement('arrivals', key, { ident: ident, callsign: cs || '', reg: tail || '', type: acType || '', from: orig || '', to: dest || AIRPORT_ICAO, filedDest: AIRPORT_ICAO, divertTo: '', divertAirport: '', divertAt: 0, arrived: true, arriveISO: eta || nowISO, arrive: fmtTimeLA(eta || nowISO), source: srcTag, timeSource: 'swim', etaNote: '' });
-    did = true;
+    var landIso = actArrTime || eta || nowISO;
+    if (Date.parse(landIso) > Date.now() + 5 * 60000) landIso = nowISO; // an arrival event is never in the future
+    var arrPatch = { ident: ident, callsign: cs || '', reg: tail || '', type: acType || '', from: orig || '', to: dest || AIRPORT_ICAO, filedDest: AIRPORT_ICAO, divertTo: '', divertAirport: '', divertAt: 0, arrived: true, landInferred: false, airborne: false, onGround: true, landedAt: Date.parse(landIso), arriveISO: landIso, arrive: fmtTimeLA(landIso), source: srcTag, timeSource: 'swim', etaNote: '' };
+    if (etd) { arrPatch.departISO = etd; arrPatch.depart = fmtTimeLA(etd); }
+    did = writeArrival(arrPatch);
   } else if (type === 'DEPARTURE' && airportMatch(orig, AIRPORT_ICAO)) {
     if (!isoWithinTodayPT(etd)) { diag('beyond-horizon'); return did; }
     swimStats.departures++;
     rememberIfKsfo('departures');
-    var departurePatch = { ident: ident, callsign: cs || '', reg: tail || '', type: acType || '', from: orig || AIRPORT_ICAO, to: dest || '', departed: true, departISO: etd || nowISO, depart: fmtTimeLA(etd || nowISO), source: srcTag, timeSource: 'swim', etaNote: '' };
+    var depIso = actDepTime || etd || nowISO;
+    var departurePatch = { ident: ident, callsign: cs || '', reg: tail || '', type: acType || '', from: orig || AIRPORT_ICAO, to: dest || '', departed: true, departISO: depIso, depart: fmtTimeLA(depIso), departActual: !!actDepTime, source: srcTag, timeSource: 'swim', etaNote: '' };
     upsertMovement('departures', key, departurePatch);
     removeLandedArrivalOnDeparture(key, departurePatch);
     did = true;
   } else if (type === 'DEPARTURE' && airportMatch(dest, AIRPORT_ICAO)) {
     if (!isoWithinTodayPT(eta || etd)) { diag('beyond-horizon'); return did; }
     swimStats.arrivals++;
-    rememberIfKsfo('arrivals');
-    upsertMovement('arrivals', key, { ident: ident, callsign: cs || '', reg: tail || '', type: acType || '', from: orig || '', to: dest || AIRPORT_ICAO, filedDest: AIRPORT_ICAO, divertTo: '', divertAirport: '', divertAt: 0, arrived: false, departISO: etd || nowISO, depart: fmtTimeLA(etd || nowISO), arriveISO: eta || '', arrive: eta ? fmtTimeLA(eta) : '', source: srcTag, timeSource: 'swim', etaNote: '' });
-    did = true;
+    // Wheels-off at the origin: the flight is airborne toward KSFO (overrides any inferred landing).
+    var offIso = actDepTime || etd || nowISO;
+    var depArrPatch = { ident: ident, callsign: cs || '', reg: tail || '', type: acType || '', from: orig || '', to: dest || AIRPORT_ICAO, filedDest: AIRPORT_ICAO, divertTo: '', divertAirport: '', divertAt: 0, arrived: false, airborne: true, departISO: offIso, depart: fmtTimeLA(offIso), departActual: true, source: srcTag, timeSource: 'swim', etaNote: '' };
+    if (eta) { depArrPatch.arriveISO = eta; depArrPatch.arrive = fmtTimeLA(eta); }
+    did = writeArrival(depArrPatch);
   } else if (type === 'FLIGHT_PLAN' || type === 'EN_ROUTE' || type === 'UNKNOWN') {
-    if (airportMatch(dest, AIRPORT_ICAO)) {
+    if (airportMatch(dest, AIRPORT_ICAO) && !airportMatch(orig, AIRPORT_ICAO)) {
       if (!isoWithinTodayPT(eta || etd)) diag('beyond-horizon');
       else {
         swimStats.arrivals++;
-        rememberIfKsfo('arrivals');
-        upsertMovement('arrivals', key, {
+        var fpPatch = {
           ident: ident, callsign: cs || '', reg: tail || '', type: acType || '', from: orig || '',
           to: dest || AIRPORT_ICAO, filedDest: AIRPORT_ICAO,
           divertTo: '', divertAirport: '', divertAt: 0,
-          arriveISO: eta || '', arrive: eta ? fmtTimeLA(eta) : '',
-          departISO: etd || '', depart: etd ? fmtTimeLA(etd) : '',
           source: srcTag, timeSource: 'swim', etaNote: ''
-        });
-        did = true;
+        };
+        if (eta) { fpPatch.arriveISO = eta; fpPatch.arrive = fmtTimeLA(eta); }
+        if (etd) { fpPatch.departISO = etd; fpPatch.depart = fmtTimeLA(etd); }
+        if (writeArrival(fpPatch)) did = true;
       }
     }
     if (airportMatch(orig, AIRPORT_ICAO)) {
@@ -1759,7 +1971,7 @@ function ingestSwimFlightBlock(block, feedLabel) {
         // track means it is airborne → DEPARTED. Use the actual departure time when TFMS gives one.
         if (msgType === 'trackinformation') {
           var actOpen = (block.match(/<(?:\w+:)?etd\b[^>]*etdType="ACTUAL"[^>]*>/i) || [])[0] || '';
-          var actDep = parseIsoLoose(xmlAttr(actOpen, 'timeValue') || xval(block, 'actualDepartureTime', 'actualOffBlockTime', 'actualTakeOffTime'));
+          var actDep = parseIsoLoose(xmlAttr(actOpen, 'timeValue') || xval(block, 'actualDepartureTime', 'actualOffBlockTime', 'actualTakeOffTime')) || actDepTime;
           depPatch.departed = true;
           if (actDep) { depPatch.departISO = actDep; depPatch.depart = fmtTimeLA(actDep); depPatch.departActual = true; }
           if (swimTrackDepSamples.length < 3) swimTrackDepSamples.push(String(block).slice(0, 4000));
@@ -1906,18 +2118,43 @@ function upsertMovement(board, key, patch) {
     if (!merged.depart) merged.depart = existing.depart;
   }
 
+  // An INFERRED landing (filed ETA passed, no live track) is only a guess: TFMS evidence that the
+  // flight is airborne (trackInformation / departureInformation) with a live ETA reverses it.
+  // Before this, the guess froze the row — N176QS kept its filed 15:00/15:54 while it was
+  // actually airborne 16:49→17:43.
+  var unlanded = false;
+  var pEta = Date.parse((patch && patch.arriveISO) || '') || 0;
+  if (board === 'arrivals' && arrLandInferred(existing) && patch && !patch.arrived &&
+      ((patch.airborne && (!pEta || pEta > Date.now() - 5 * 60000)) || (patch.liveEta && pEta > Date.now() + 2 * 60000))) {
+    {
+      merged.onGround = false; merged.arrived = false; merged.landInferred = false;
+      delete merged.landedAt;
+      unlanded = true;
+    }
+  }
+  if (board === 'arrivals' && patch && patch.arrived) merged.landInferred = false;
   // Once landed / on-ground, do not un-land via FLIGHT_PLAN/EN_ROUTE or ADS-B inbound keep-alive.
   // Freeze the land clock so repeated SWIM ARRIVAL msgs with nowISO cannot churn timestamps.
-  if (board === 'arrivals' && (existing.arrived || existing.onGround)) {
-    if (existing.arrived) merged.arrived = true;
+  // A real arrival event replaces an inferred landing time with the actual one.
+  if (board === 'arrivals' && !unlanded && existing.arrived && !(patch && patch.arrived && arrLandInferred(existing))) {
+    merged.arrived = true;
     if (existing.onGround) merged.onGround = true;
     merged.landedAt = existing.landedAt || landClockMs(existing, Date.now());
     if (existing.arriveISO) {
       merged.arriveISO = existing.arriveISO;
       merged.arrive = existing.arrive || merged.arrive;
     }
-    // Do not let ADS-B geometric ETA revive a landed row as "inbound"
     if (patchIsAdsb) {
+      merged.etaNote = '';
+      delete merged.etaMin;
+      if (existing.timeSource) merged.timeSource = existing.timeSource;
+    }
+  } else if (board === 'arrivals' && !unlanded && arrLandInferred(existing) && !(patch && patch.arrived)) {
+    // Inferred landing, no airborne proof in this patch: keep it landed, but let TFMS refine times.
+    merged.onGround = true; merged.landInferred = true;
+    merged.landedAt = existing.landedAt || landClockMs(existing, Date.now());
+    if (patchIsAdsb) {
+      if (existing.arriveISO) { merged.arriveISO = existing.arriveISO; merged.arrive = existing.arrive || merged.arrive; }
       merged.etaNote = '';
       delete merged.etaMin;
       if (existing.timeSource) merged.timeSource = existing.timeSource;
@@ -1945,6 +2182,7 @@ function upsertMovement(board, key, patch) {
     delete merged.landedAt;
   }
 
+  delete merged.liveEta;
   merged.lastUpdate = Date.now();
   m.set(resolved, merged);
   persistDirty = true;
@@ -2622,6 +2860,7 @@ function landClockMs(f, now) {
 function pruneLandedArrivals() {
   var now = Date.now();
   var changed = false;
+  if (promoteQueuedLegs()) changed = true;
   movements.arrivals.forEach(function (f, key) {
     if (!f) return;
     var arrMs = f.arriveISO ? new Date(f.arriveISO).getTime() : 0;
@@ -2629,16 +2868,23 @@ function pruneLandedArrivals() {
     // A passed ADS-B *geometric* ETA is not a landing — only a filed/SWIM time or an observed
     // touchdown counts (ADS-B-only ghosts used to turn into permanent "LANDED" rows).
     var geometricOnly = f.timeSource === 'adsb' || (isAdsbBoardSource(f.source) && !isSwimishSource(f.source));
-    var landed = !!f.arrived || !!f.onGround || (!geometricOnly && arrMs > 0 && arrMs <= now);
-    if (!landed) return;
-    // A filed/estimated arrival that has passed is on-ground for retention
-    // purposes even if SWIM has not emitted its explicit ARRIVAL event yet.
-    if (!f.arrived && arrMs > 0 && arrMs <= now) f.onGround = true;
-    var landMs = landClockMs(f, now);
-    if (!f.landedAt) f.landedAt = landMs;
-    // Do not age landed rows off the board. Ramp staff use this column as the
-    // on-ground inventory until a matching departure is observed.
-    if (f.ident) {
+    if (!f.arrived && !f.onGround) {
+      if (geometricOnly || !arrMs) return;
+      // Still airborne? A live TFMS track (~1/min) or a fresh airborne ADS-B fix says so, even if
+      // the ETA has slipped. Otherwise: the track ended at/after the ETA, or the ETA is more than
+      // LAND_INFER_GRACE_MS past → it landed (it moves to ARRIVED and stays until it departs).
+      var trackLive = f.lastTrackAt && now - f.lastTrackAt < TRACK_LIVE_MS;
+      var adsbLive = f.lastAdsbAt && now - f.lastAdsbAt < 3 * 60000 && f.adsbProgress && f.alt > 0;
+      if (trackLive || adsbLive) return;
+      var trackEnded = !!f.lastTrackAt && arrMs <= now + 10 * 60000;
+      var overdue = arrMs <= now - LAND_INFER_GRACE_MS;
+      if (!trackEnded && !overdue) return; // ≤30 min past ETA, no proof either way: still en route
+      f.onGround = true; f.landInferred = true; f.airborne = false;
+      f.landedAt = trackEnded ? Math.min(Math.max(arrMs, f.lastTrackAt), now) : arrMs;
+      persistDirty = true;
+    }
+    if (!f.landedAt) f.landedAt = landClockMs(f, now);
+    if (f.ident && !isQueuedLegKey(key)) {
       groundCache[key] = {
         ident: f.ident, callsign: f.callsign, type: f.type, from: f.from,
         city: f.city, country: f.country, intl: f.intl,
@@ -2647,6 +2893,45 @@ function pruneLandedArrivals() {
     }
     changed = true;
   });
+  if (pruneStaleGroundRows()) changed = true;
+  return changed;
+}
+
+// Landed rows stay in ARRIVED until the aircraft departs — but a departure TFMS never told us
+// about (service asleep, feed gap) must not leave the row there for days. Drop a landed row when:
+//  - its row carries a later leg's departure time that has already passed (it left), or
+//  - the aircraft's own KSFO departure ETD after landing passed >2 h ago with no wheels-off seen, or
+//  - it landed >12 h ago and no future KSFO departure is filed for it.
+var STALE_GROUND_NO_PLAN_MS = 12 * 3600000;
+function pruneStaleGroundRows() {
+  var now = Date.now(), changed = false;
+  var idx = buildDepartureIndex();
+  Array.from(movements.arrivals.keys()).forEach(function (key) {
+    if (isQueuedLegKey(key)) return;
+    var f = movements.arrivals.get(key);
+    if (!f || !arrIsLanded(f)) return;
+    var lm = arrLandedMs(f);
+    if (!lm) return;
+    var why = '';
+    var dms = Date.parse(f.departISO || '') || 0;
+    if (dms && dms > lm + 10 * 60000 && dms < now - 30 * 60000) why = 'later-leg ETD passed';
+    var deps = [];
+    aircraftKeys(f, key).forEach(function (n) { (idx.get(n) || []).forEach(function (d) { if (deps.indexOf(d) < 0) deps.push(d); }); });
+    var future = false;
+    deps.forEach(function (d) {
+      var dm = Date.parse(d.departISO || '') || 0;
+      if (!dm || dm < lm - 5 * 60000) return;
+      if (dm < now - 2 * 3600000) { if (!why) why = 'own ETD ' + (d.depart || '') + ' passed >2h'; }
+      else future = true;
+    });
+    if (!why && !future && now - lm > STALE_GROUND_NO_PLAN_MS) why = 'landed >12h, no departure filed';
+    if (!why) return;
+    retireArrivalRow(key);
+    changed = true;
+    swimDiag.staleGroundDropped = (swimDiag.staleGroundDropped || 0) + 1;
+    swimDiagNote({ at: new Date().toISOString(), msgType: 'prune', acid: f.callsign || '', tail: f.reg || f.ident || '', type: f.type || '', orig: f.from || '', dest: AIRPORT_ICAO, eta: f.arriveISO || '', etd: f.departISO || '', src: '', decision: 'stale-ground:' + why });
+  });
+  if (changed) promoteQueuedLegs();
   return changed;
 }
 
@@ -2668,7 +2953,7 @@ function removeLandedArrivalOnDeparture(key, patch) {
   add(resolveBoardKey(patch && patch.reg, patch && patch.callsign, null));
   var removed = false;
   movements.arrivals.forEach(function (f, arrivalKey) {
-    if (!f) return;
+    if (!f || isQueuedLegKey(arrivalKey)) return;
     var arrivalMs = f.arriveISO ? Date.parse(f.arriveISO) : 0;
     if (!f.arrived && !f.onGround && !(arrivalMs && arrivalMs <= Date.now())) return;
     var matches = candidates.indexOf(arrivalKey) >= 0;
@@ -2686,6 +2971,7 @@ function removeLandedArrivalOnDeparture(key, patch) {
       removed = true;
     }
   });
+  if (removed) promoteQueuedLegs();
   return removed;
 }
 
@@ -3503,10 +3789,19 @@ async function buildBoard(kind) {
   pruneDivertedMovements();
   if (kind === 'arrivals') pruneLandedArrivals();
   entries = Array.from(m.values());
+  var nowB = Date.now();
   var entryKeys = Array.from(m.keys());
   var depIdx = kind === 'arrivals' ? buildDepartureIndex() : null;
   for (var i = 0; i < entries.length; i++) {
     var f = Object.assign({}, entries[i]);
+    if (kind === 'arrivals') {
+      // ETA passed but not (yet) counted as landed: live track / ≤30 min grace. The client keeps
+      // these in ARRIVALS instead of guessing LANDED from the clock.
+      var etaMsB = Date.parse(f.arriveISO || '') || 0;
+      f.landPending = !!(etaMsB && etaMsB <= nowB && !f.arrived && !f.onGround);
+      if (f.lastTrackAt) f.trackAgeSec = Math.round((nowB - f.lastTrackAt) / 1000);
+      delete f.liveEta;
+    }
     if (depIdx) {
       var nd = nextDepartureFor(f, entryKeys[i], depIdx);
       f.nextDepartISO = nd ? nd.departISO : '';
@@ -3763,6 +4058,7 @@ const server = http.createServer(async (req, res) => {
       extReg: Array.from(extRegByCallsign.entries()).filter(function (e) { return !isLaddBlocked(e[1], e[0]); }),
       rawNoEta: (parsed.query && parsed.query.raw === '1') ? swimRawNoEta.filter(function (e) { return !isLaddBlocked('', e.acid) && !laddRawBlockBlocked(e.xml); }) : swimRawNoEta.length,
       trackDepSamples: (parsed.query && parsed.query.raw === '1') ? swimTrackDepSamples.filter(function (x) { return !laddRawBlockBlocked(x); }) : swimTrackDepSamples.length,
+      depArrSamples: (parsed.query && parsed.query.raw === '1') ? swimDepArrSamples.filter(function (x) { return !laddRawBlockBlocked(x); }) : swimDepArrSamples.length,
       plans: plansOut,
       adsbBoard: adsbBoardStats,
       persist: persistStatus
@@ -3868,7 +4164,7 @@ wss.on('connection', ws => {
 setInterval(pollOpenSkyFlights, 120000);
 setInterval(pollAdsbInboundBoard, 45000);
 setInterval(function () { runCallsignLookup().catch(function () {}); }, 20000);
-setInterval(function () { var a = rehydrateFromPlans(), b = repairMisDeparted(); if (a || b) broadcast({ type: 'board' }); }, 60000);
+setInterval(function () { var a = rehydrateFromPlans(), b = repairMisDeparted(), c = repairMixedArrivalLegs(); if (a || b || c) broadcast({ type: 'board' }); }, 60000);
 ensureFaaDb(false).catch(function (e) { log('[FAA DB] boot load: ' + e.message, 'WARN'); });
 setInterval(function () { ensureFaaDb(false).catch(function () {}); }, 24 * 3600 * 1000);
 
@@ -3897,6 +4193,7 @@ async function main() {
   });
   try { rehydrateFromPlans(); } catch (e) { log('[persist] rehydrate failed: ' + e.message, 'WARN'); }
   try { repairMisDeparted(); } catch (e) { log('[persist] repair failed: ' + e.message, 'WARN'); }
+  try { repairMixedArrivalLegs(); pruneLandedArrivals(); } catch (e) { log('[persist] leg repair failed: ' + e.message, 'WARN'); }
   await adbLoadUsage();
   await loadLaddBlocklist();
   server.listen(PORT, '0.0.0.0', () => log('Skyway v250 — http://0.0.0.0:' + PORT, 'OK'));
@@ -3957,7 +4254,7 @@ if (process.env.SKYWAY_TEST === '1') {
     adsbArrivalEvidence: adsbArrivalEvidence, adsbDepartureEvidence: adsbDepartureEvidence,
     buildBoard: buildBoard, isGaBizTraffic: isGaBizTraffic, swimDiag: swimDiag, tfmsPendingUntyped: tfmsPendingUntyped,
     promotePendingTfms: promotePendingTfms, saveSnapshot: saveSnapshot, restoreSnapshot: restoreSnapshot,
-    buildSnapshot: buildSnapshot, pruneLandedArrivals: pruneLandedArrivals, pruneStaleAdsbOnly: pruneStaleAdsbOnly,
+    buildSnapshot: buildSnapshot, pruneLandedArrivals: pruneLandedArrivals, promoteQueuedLegs: promoteQueuedLegs, repairMixedArrivalLegs: repairMixedArrivalLegs, pruneStaleGroundRows: pruneStaleGroundRows, isGaBizTrafficFn: isGaBizTraffic, pruneStaleAdsbOnly: pruneStaleAdsbOnly,
     tfmsElsewhereFor: tfmsElsewhereFor, identAliases: identAliases, boardWindowInfo: boardWindowInfo, sunEventUtcMs: sunEventUtcMs, isoWithinTodayPT: isoWithinTodayPT, pruneTfmsPlansPastMidnight: pruneTfmsPlansPastMidnight, buildDepartureIndex: buildDepartureIndex, nextDepartureFor: nextDepartureFor, rehydrateFromPlans: rehydrateFromPlans, repairMisDeparted: repairMisDeparted, toIcaoAirport: toIcaoAirport, runCallsignLookup: runCallsignLookup,
     isLaddBlocked: isLaddBlocked, laddMaskRow: laddMaskRow, parseLaddList: parseLaddList, ingestLaddText: ingestLaddText, buildSwimArrivals: buildSwimArrivals, loadLaddBlocklist: loadLaddBlocklist, laddBlocked: laddBlocked, requireRampEditAuth: requireRampEditAuth, laddStatusPayload: laddStatusPayload
   };

@@ -2836,7 +2836,7 @@ function mkRow(f,cls,done){
   }
   else if(cls==='de'&&f.departed)etaStr='<span style="color:var(--red);font-weight:700" title="Departed (wheels off)">OFF</span>';
   else if(cls==='ar'&&!done&&f._landed)etaStr='<span class="arr-eta" data-tail="'+htmlEsc((f.ident||'').toUpperCase())+'" data-callsign="'+htmlEsc((f.callsign||'').toUpperCase())+'" style="color:var(--green);font-weight:700">LANDED</span>';
-  else if(cls==='ar'&&!done&&rawEta<=5&&rawEta>0)etaStr='<span class="arr-eta" data-tail="'+htmlEsc((f.ident||'').toUpperCase())+'" data-callsign="'+htmlEsc((f.callsign||'').toUpperCase())+'" style="color:var(--amber);font-weight:700">FINAL</span>';
+  else if(cls==='ar'&&!done&&rawEta<=5&&(rawEta>0||f.landPending))etaStr='<span class="arr-eta" data-tail="'+htmlEsc((f.ident||'').toUpperCase())+'" data-callsign="'+htmlEsc((f.callsign||'').toUpperCase())+'" style="color:var(--amber);font-weight:700">FINAL</span>';
   else if(cls==='ar'&&!done&&f.arriveISO&&rawEta<=0)etaStr='<span class="arr-eta" data-tail="'+htmlEsc((f.ident||'').toUpperCase())+'" data-callsign="'+htmlEsc((f.callsign||'').toUpperCase())+'" style="color:var(--green);font-weight:700">LANDED</span>';
   else if(rawEta>0){
     etaStr=fmtHM(rawEta);
@@ -3139,7 +3139,7 @@ function fetchBoards(){
       var minsSinceArr=arrTime>0?Math.round((now-arrTime)/60000):-999;
       // Keep all on-ground arrivals in the arrivals column until a matching
       // departure is observed; there is no five-minute landed timeout.
-      if(f.arrived||f.onGround||(arrTime>0&&minsSinceArr>=0)){
+      if(f.arrived||f.onGround||(arrTime>0&&minsSinceArr>=0&&!f.landPending)){
         // Landed → ARRIVED section; stays until a matching departure is observed (server rule).
         f._landed=true;
         if(!f.departed)completed.push(f);
