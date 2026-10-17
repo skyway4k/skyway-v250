@@ -1582,7 +1582,9 @@ function guardArrivalTimes(row, patch, ctx) {
     patch.departISO = ctx.actDep; patch.depart = fmtTimeLA(ctx.actDep); patch.departActual = true; patch.airborne = true;
   } else if (row && row.departActual) {
     delete patch.departISO; delete patch.depart;
-  } else if (ctx.filedOnly && trackLive) {
+  } else if (row && (row.lastTrackAt || row.arrived || row.airborne) && !ctx.isTrack) {
+    // Once airborne/landed, only an actual time or the live track may move the departure time
+    // (arrivalInformation repeats the filed igtd: N176QS flipped back to 15:00 after landing).
     delete patch.departISO; delete patch.depart;
   }
   if ((trackLive || (row && row.departActual)) && ctx.filedOnly) { delete patch.arriveISO; delete patch.arrive; }

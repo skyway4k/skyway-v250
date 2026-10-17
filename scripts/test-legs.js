@@ -38,6 +38,13 @@ const row = id => A().get(S.identAliases.get(id) || id);
   assert.strictEqual(r.departISO && T(row('N176QS').departISO), iso(-16), 'filed amendment reverted actual departure');
   assert.strictEqual(T(r.arriveISO), iso(36), 'filed amendment reverted live ETA');
   console.log('N176QS', r.depart, '→', r.arrive, 'onGround', !!r.onGround);
+  // Landing message repeats the filed igtd: departure time must not revert.
+  send([{ acid: 'EJA176', dep: 'VNY', arr: 'SFO', msgType: 'arrivalInformation', etd: iso(-125), eta: iso(-0.5), etaType: 'ACTUAL', ref: '176A' }]);
+  r = row('N176QS');
+  assert(r.arrived && T(r.departISO) === iso(-16), 'arrival msg reverted departure: ' + r.depart);
+  delete S.movements.arrivals.get(S.identAliases.get('N176QS') || 'N176QS').departActual;
+  send([{ acid: 'EJA176', dep: 'VNY', arr: 'SFO', msgType: 'arrivalInformation', etd: iso(-125), eta: iso(-0.5), etaType: 'ACTUAL', ref: '176A' }]);
+  assert(T(row('N176QS').departISO) === iso(-16), 'arrival msg reverted track departure');
 
   // 2) N454QS: landed this afternoon, out SFO→HHR, back HHR→SFO tonight — two legs, never merged.
   send([{ acid: 'EJA454', dep: 'TRM', arr: 'SFO', msgType: 'arrivalInformation', etd: iso(-150), eta: iso(-110), etaType: 'ACTUAL', ref: '454A', type: 'E55P' }]);
