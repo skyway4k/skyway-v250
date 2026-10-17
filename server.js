@@ -2944,6 +2944,12 @@ function pruneStaleGroundRows() {
     swimDiag.staleGroundDropped = (swimDiag.staleGroundDropped || 0) + 1;
     swimDiagNote({ at: new Date().toISOString(), msgType: 'prune', acid: f.callsign || '', tail: f.reg || f.ident || '', type: f.type || '', orig: f.from || '', dest: AIRPORT_ICAO, eta: f.arriveISO || '', etd: f.departISO || '', src: '', decision: 'stale-ground:' + why });
   });
+  // The on-ground inventory (/api/ground, forecast ON GND) mirrors the ARRIVED rows: an entry whose
+  // arrival row is gone (departed, or dropped as stale above) is not on the ground any more.
+  Object.keys(groundCache).forEach(function (k) {
+    var f = movements.arrivals.get(k) || movements.arrivals.get(identAliases.get(k) || k);
+    if (!f || !arrIsLanded(f)) { delete groundCache[k]; changed = true; }
+  });
   if (changed) promoteQueuedLegs();
   return changed;
 }
