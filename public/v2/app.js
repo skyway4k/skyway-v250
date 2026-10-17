@@ -176,8 +176,13 @@
   function obCell(r, sec, now) {
     var o = r.ob || { mode: 'none' }, v = '—', sub = '', c = 'ob-none';
     if (sec === 'departed') { if (r.onBaseSinceISO && r.offISO) { v = dur((t(r.offISO) - t(r.onBaseSinceISO)) / MIN); sub = 'was on'; c = 'ob-plan'; } else sub = ''; }
-    else if (o.mode === 'countdown') { var m = (t(o.toISO) - now) / MIN; v = dur(m); sub = 'to ETD'; c = m <= 30 ? 'ob-soon' : 'ob-cd'; }
-    else if (o.mode === 'overdue') { v = hmOver((now - t(o.toISO)) / MIN); sub = 'past ETD'; c = 'ob-late'; }
+    else if (o.mode === 'countdown' || o.mode === 'overdue') {
+      // decide on the client clock so the cell flips exactly at ETD
+      var m = (t(o.toISO) - now) / MIN;
+      if (m >= 0) { v = dur(m); sub = 'to ETD'; c = m <= 30 ? 'ob-soon' : 'ob-cd'; }
+      else if (m >= -180) { v = hmOver(-m); sub = 'past ETD'; c = 'ob-late'; }
+      else { sub = sec === 'onGround' ? 'no ETD' : ''; }
+    }
     else if (o.mode === 'planned') { v = dur((t(o.toISO) - t(o.fromISO)) / MIN); sub = 'plan'; c = 'ob-plan'; }
     else if (sec === 'onGround') { sub = 'no ETD'; }
     return cell('c-ob ' + c, '<b class="tn">' + v + '</b>' + (sub ? '<small>' + sub + '</small>' : ''));
@@ -216,7 +221,7 @@
       main = clk(r.etdISO); var m2 = (t(r.etdISO) - now) / MIN;
       sub = !r.etdISO ? 'no ETD' : r.status.code === 'taxi' ? 'TAXI' : m2 >= 0 ? 'in ' + dur(m2) : 'late ' + dur(-m2);
       var dt3 = dayTag(r.etdISO); if (dt3 && r.etdISO) main = '<span style="font-size:10px;color:var(--tx3)">' + dt3 + ' </span>' + main;
-    } else { main = clk(r.offISO); sub = dur((now - t(r.offISO)) / MIN) + ' ago'; }
+    } else { main = r.offISO ? clk(r.offISO) : '—'; sub = r.offISO ? dur((now - t(r.offISO)) / MIN) + ' ago' : 'time n/a'; }
     return cell('c-tm', '<b class="tn">' + main + '</b><small class="' + sc + '">' + esc(sub) + '</small>');
   }
   function stCell(r) {
@@ -619,7 +624,7 @@
   }
   function lobbyRows(list, kind, now) {
     return list.map(function (r) {
-      var iso = kind === 'a' ? (r.landedISO || r.etaISO) : (r.offISO || r.etdISO);
+      var iso = kind === 'a' ? (r.landedISO || r.etaISO) : (r.status.code === 'off' ? r.offISO : r.etdISO);
       var rm = lobbyRemark(r, now), m = shortModel(r.model);
       return '<div class="lr"><span class="t">' + esc(r.ident) + '</span><span class="ty"><b>' + esc(r.type || '—') + '</b><small>' + esc(m || '') + '</small></span><span class="tm tn">' + (iso ? clk(iso) : '—') + '</span><span class="rm" style="color:' + rm[1] + '">' + rm[0] + '</span></div>';
     });
