@@ -4006,6 +4006,16 @@ function buildSwimArrivals(airportQ) {
   };
 }
 
+// Skyway v2 preview (additive): /v2, /v2/{dispatch,line,lobby,gm}, /v2/assets/*, GET /api/v2/board.
+// Read-only composer over buildBoard(); ramp writes keep using PATCH /api/{dispatch|line-room}/ramp/:id.
+var v2Board = require('./lib/v2board')({
+  buildBoard: function (k) { return buildBoard(k); },
+  boardWindowInfo: function () { return boardWindowInfo(); },
+  status: function () { return buildStatusPayload(); },
+  fuelPrice: FUEL_PRICE_PER_GAL, LADD_MASK: LADD_MASK, PUBLIC_DIR: PUBLIC_DIR,
+  sendJSON: sendJSON, touchActivity: function () { touchActivity(); }
+});
+
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   // CORS is open for reads only. Ramp writes are same-origin (Skyway's own UI) or non-browser
@@ -4038,6 +4048,9 @@ const server = http.createServer(async (req, res) => {
     serveFile(res, vPath, ctype); return;
   }
 
+  if (pathname === '/v2' || pathname.indexOf('/v2/') === 0 || pathname.indexOf('/api/v2/') === 0) {
+    if (await v2Board.handle(req, res, pathname, parsed.query)) return;
+  }
   if (pathname === '/adsb/states') { touchActivity(); await handleAdsbStates(parsed.query, res); return; }
   if (pathname.startsWith('/osky/')) { touchActivity(); await proxyOsky(req.url.replace('/osky', ''), res); return; }
   if (pathname === '/status') { sendJSON(res, 200, buildStatusPayload()); return; }

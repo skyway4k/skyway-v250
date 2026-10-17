@@ -153,3 +153,14 @@ the ramp.
 Feature parity was spot-checked against the Apr + Aug 2026 v249 baselines under
 `/workspace/baselines/` (operator catalog 20/20, VIP, HEMS, SPOT_DEFS/suggestSpot, heli monitor,
 shift handoff, tail lookup, Leaflet multi-tile fallback, credit meter).
+
+## Skyway v2 preview (`/v2`)
+
+New ramp-ops UI that runs alongside the v1 pages (which are unchanged):
+`/v2/dispatch`, `/v2/line`, `/v2/lobby`, `/v2/gm`. One read-only call, `GET /api/v2/board?view=<role>`,
+returns the four sections, the "Now" strip, a per-spot ramp timeline (conflicts + spot suggestions),
+GM summary and hourly profile. It is composed in `lib/v2board.js` from the same `buildBoard()` rows
+`/api/arrivals` and `/api/departures` serve; ramp edits still go through `PATCH /api/{dispatch|line-room}/ramp/:id`.
+Role projection happens server-side (lobby gets tail/type/time only; line gets no $), so it can sit behind login later.
+Airport coordinates for fuel-leg estimates: `data/v2-airports.json` (OurAirports, public domain).
+Local preview without DB/SWIM: `node scripts/v2-dev.js <fixtureDir>`; checks: `node scripts/test-v2.js`.
