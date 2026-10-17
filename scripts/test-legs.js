@@ -103,6 +103,10 @@ const row = id => A().get(S.identAliases.get(id) || id);
   // 7) KSFO-origin plan never writes an arrival row (N191QS from=KSFO).
   send([{ acid: 'N77LL', dep: 'SFO', arr: 'SFO', msgType: 'flightPlanInformation', etd: iso(30), eta: iso(90), type: 'C172' }]);
   assert(!A().has('N77LL'), 'SFO→SFO plan wrote an arrival row');
+  // 8) No-time filed row quiet for 6h+ leaves ARRIVALS.
+  A().set('VJA578', { ident: 'VJA578', callsign: 'VJA578', type: 'CL30', from: 'MMSD', to: 'KSFO', source: 'swim', timeSource: 'swim', lastUpdate: Date.now() - 7 * 3600000 });
+  S.pruneLandedArrivals();
+  assert(!A().has('VJA578'), 'quiet no-time row kept');
   console.log('ALL LEG TESTS OK');
   process.exit(0);
 })().catch(e => { console.error('TEST FAIL', e); process.exit(1); });

@@ -2865,6 +2865,7 @@ function landClockMs(f, now) {
 function pruneLandedArrivals() {
   var now = Date.now();
   var changed = false;
+  var staleNoTime = [];
   if (promoteQueuedLegs()) changed = true;
   movements.arrivals.forEach(function (f, key) {
     if (!f) return;
@@ -2874,6 +2875,12 @@ function pruneLandedArrivals() {
     // touchdown counts (ADS-B-only ghosts used to turn into permanent "LANDED" rows).
     var geometricOnly = f.timeSource === 'adsb' || (isAdsbBoardSource(f.source) && !isSwimishSource(f.source));
     if (!f.arrived && !f.onGround) {
+      // A filed row that never got any time (VJA578 MMSD, last heard 01:01) and has been quiet
+      // for 6 h is not an en-route flight: drop it instead of leaving it in ARRIVALS.
+      if (!arrMs && !f.departISO && isSwimishSource(f.source) && f.lastUpdate && now - f.lastUpdate > 6 * 3600000) {
+        staleNoTime.push(key);
+        return;
+      }
       if (geometricOnly || !arrMs) return;
       // Still airborne? A live TFMS track (~1/min) or a fresh airborne ADS-B fix says so, even if
       // the ETA has slipped. Otherwise: the track ended at/after the ETA, or the ETA is more than
@@ -2898,6 +2905,7 @@ function pruneLandedArrivals() {
     }
     changed = true;
   });
+  staleNoTime.forEach(function (k) { movements.arrivals.delete(k); changed = true; persistDirty = true; });
   if (pruneStaleGroundRows()) changed = true;
   return changed;
 }
